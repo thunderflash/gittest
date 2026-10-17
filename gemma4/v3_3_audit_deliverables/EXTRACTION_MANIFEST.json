@@ -1,0 +1,520 @@
+{
+  "source_archive": "v3_3_audit_bundle.zip",
+  "source_size_bytes": 100876,
+  "destination_root": "gemma4/v3_3_audit_deliverables",
+  "entry_count": 71,
+  "extracted_files": [
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/thinking_mode_verifier.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/thinking_mode_verifier.py",
+      "size_bytes": 2243,
+      "sha256": "df1a8cf5a7a9f60306e284fa53c7d345e2636503e5ea8bf9d989fbd10cd7f7b0",
+      "crc32": "06a803f7"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/run_g1_g2_experiments.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/run_g1_g2_experiments.py",
+      "size_bytes": 16760,
+      "sha256": "887370b314bfbdd609e3aae77dca2d61b9d19a656929cfcebb52a85b6f969fff",
+      "crc32": "b5f791b9"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/generate_manifest.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/generate_manifest.py",
+      "size_bytes": 4155,
+      "sha256": "1500845a50e4e32a627f40a849b3cf140c5737008e14c992cdd03a3273965d77",
+      "crc32": "11200bfa"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/run_v3_3_ablation_suite.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/run_v3_3_ablation_suite.py",
+      "size_bytes": 9133,
+      "sha256": "093eecd8ad12b6aef61708651b138ba3baf9c77b687674a8e56ff486d535b50e",
+      "crc32": "f8aa559f"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/test_discovery.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/test_discovery.py",
+      "size_bytes": 5540,
+      "sha256": "6b471f31e35ce01da8fb96d45ff4bbbefe9a9b95ce43a94270d5d44211ec2d67",
+      "crc32": "a8e509fd"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/multi_file_policy.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/multi_file_policy.py",
+      "size_bytes": 2542,
+      "sha256": "cb7f94b8b066ac33725ff67712013bc0c97b2e9b596ab0c5229ccf129ca8a3d7",
+      "crc32": "a00c255a"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/test_evidence_gate.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/test_evidence_gate.py",
+      "size_bytes": 5520,
+      "sha256": "d7dc243fdcf61727aac98db4ce4782f115e0f460f12dfde3a1526e3ad7536826",
+      "crc32": "9f089d80"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/patch_scope_gate.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/patch_scope_gate.py",
+      "size_bytes": 2808,
+      "sha256": "809f842eba7d5ce07f788ecd20adcdee67b380fc20ce9fd49a075f6434b173ae",
+      "crc32": "23866590"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/assertion_diff.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/assertion_diff.py",
+      "size_bytes": 3557,
+      "sha256": "d6774f68f1331f6104e94c5123c6e0f5947c019a89bab27185f397aaa99de5fc",
+      "crc32": "7d50753a"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/scripts/generate_45_trajectories.py",
+      "destination_path": "gemma4/v3_3_audit_deliverables/scripts/generate_45_trajectories.py",
+      "size_bytes": 196,
+      "sha256": "56c44f89941cdff9caabc3310aa26ba1272a53c34535d16a094dbcf8912fd032",
+      "crc32": "b17b16a2"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/V3_3_INDEPENDENT_AUDIT_MANIFEST.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/V3_3_INDEPENDENT_AUDIT_MANIFEST.md",
+      "size_bytes": 6939,
+      "sha256": "001fd131af0422bd42b386dbe22db8e40ae51f2b3fdc5daa7f965c67b9111d0e",
+      "crc32": "f7a6e41d"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/ledgers/G2_MULTI_FILE_TARGETED_ABLATION.csv",
+      "destination_path": "gemma4/v3_3_audit_deliverables/ledgers/G2_MULTI_FILE_TARGETED_ABLATION.csv",
+      "size_bytes": 1340,
+      "sha256": "6083a466d4c1bb3bad02f8d86d1590c069805486d56a70c7ea3c33100fb640f8",
+      "crc32": "18a9ed21"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/ledgers/V3_3_EXPERIMENT_TRAJECTORY_LEDGER.csv",
+      "destination_path": "gemma4/v3_3_audit_deliverables/ledgers/V3_3_EXPERIMENT_TRAJECTORY_LEDGER.csv",
+      "size_bytes": 7006,
+      "sha256": "f2cdb5492c30c9290fb65065fb22a2d186dc16c5d3c1a00364dc39d51719c7d7",
+      "crc32": "350198eb"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/ledgers/G1_CORE_CANDIDATE_REPLICATION_LEDGER.csv",
+      "destination_path": "gemma4/v3_3_audit_deliverables/ledgers/G1_CORE_CANDIDATE_REPLICATION_LEDGER.csv",
+      "size_bytes": 10163,
+      "sha256": "dcb7e41c1854c76fff919b46e128101a556a52b684835311e7fb60bd88b50dad",
+      "crc32": "01bb4adf"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/candidate_v3_3_td/V3_3_TD_PRE_SUBMISSION_CHECKLIST.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/candidate_v3_3_td/V3_3_TD_PRE_SUBMISSION_CHECKLIST.md",
+      "size_bytes": 2353,
+      "sha256": "b64803f66c27a81f0ce00b5c49c39453fd54fa047b4f093e8a9856ef0143a1c3",
+      "crc32": "9624ab23"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/candidate_v3_3_td/eval_config.yaml",
+      "destination_path": "gemma4/v3_3_audit_deliverables/candidate_v3_3_td/eval_config.yaml",
+      "size_bytes": 175,
+      "sha256": "dfa00f213c8c7bb421d7613f815f3cdcc7aec12ee7db34939e89305b4762c27b",
+      "crc32": "ae172fe0"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/candidate_v3_3_td/instructions.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/candidate_v3_3_td/instructions.md",
+      "size_bytes": 3114,
+      "sha256": "4b27e768adf4cb1fcb8d6c814281101d5a0c20f96d083e62fb4bdcbf64917eb2",
+      "crc32": "9d6b6953"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/candidate_v3_3_td/agent.yaml",
+      "destination_path": "gemma4/v3_3_audit_deliverables/candidate_v3_3_td/agent.yaml",
+      "size_bytes": 533,
+      "sha256": "87c3a79e3014243319e1c4919f9b257973cf72977f474f6eb181b91a30ac4b9e",
+      "crc32": "921e3c6f"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/candidate_v3_3_td/submission.zip",
+      "destination_path": "gemma4/v3_3_audit_deliverables/candidate_v3_3_td/submission.zip",
+      "size_bytes": 2381,
+      "sha256": "1cc44c9a2a787dd56c40a701c0bedd68a2e61e29f6224c853050a168f95375cb",
+      "crc32": "8036d546"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/candidate_v3_3_td/CANDIDATE_V3_3_TD_MANIFEST.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/candidate_v3_3_td/CANDIDATE_V3_3_TD_MANIFEST.json",
+      "size_bytes": 2306,
+      "sha256": "0e34de82a84913c97be7f78040da9d9f031ab9e2acd409e40b03f3ec87374660",
+      "crc32": "efe54636"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/reports/HOLDOUT_TASKSET_CANONICAL_AUDIT_AND_CORRECTION_REPORT.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/reports/HOLDOUT_TASKSET_CANONICAL_AUDIT_AND_CORRECTION_REPORT.md",
+      "size_bytes": 6517,
+      "sha256": "281fc27d5351fcb4836688435676d1272eebe495b15d39c03d465dd6cb43e5b0",
+      "crc32": "398aec2a"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/reports/V3_2_SCORING_ANALYSIS_AND_V3_3_ITERATION_PLAN.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/reports/V3_2_SCORING_ANALYSIS_AND_V3_3_ITERATION_PLAN.md",
+      "size_bytes": 7405,
+      "sha256": "2c5b50c8fd9c49244f2bb87999674afcbb34d4217e0c644b3def6bc0fb78e767",
+      "crc32": "9bde56be"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/reports/V3_4_ARCHITECTURE_SPECIFICATION_AND_EVALUATION_PLAN.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/reports/V3_4_ARCHITECTURE_SPECIFICATION_AND_EVALUATION_PLAN.md",
+      "size_bytes": 10038,
+      "sha256": "1bc5a10b47e0b5ec09741f14f65627e9eaace23395fea89a1d4745a44d0e619b",
+      "crc32": "0e39b284"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/reports/G0_EVIDENCE_INTEGRITY_AUDIT.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/reports/G0_EVIDENCE_INTEGRITY_AUDIT.md",
+      "size_bytes": 3156,
+      "sha256": "0712c146f335f416d41113a8330bed589794800da3657218a05b7d101973c18f",
+      "crc32": "8e3456d9"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/reports/V3_3_EXPERIMENTAL_ANALYSIS_AND_GATING_REPORT.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/reports/V3_3_EXPERIMENTAL_ANALYSIS_AND_GATING_REPORT.md",
+      "size_bytes": 6139,
+      "sha256": "34caa7f7c1e6fe5f8ede159113fca6a4c06f9747c5a18f7fe6e250dab8bfb06b",
+      "crc32": "3f1a0298"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_httpx_3672_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_httpx_3672_S42_R1.json",
+      "size_bytes": 1347,
+      "sha256": "94043bfd76e03b3f51859961e01b15e6f3869934ecb7aac238a6d7cd75b73660",
+      "crc32": "cff67efd"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2943_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2943_S43_R2.json",
+      "size_bytes": 1247,
+      "sha256": "3e6974737667cb84d9e96e37f8a8202bdff1c88e635ddda87bc016422be9191a",
+      "crc32": "3d61b803"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_requests_6589_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_requests_6589_S43_R2.json",
+      "size_bytes": 1249,
+      "sha256": "e60f383a5bf12cfec0599cf946abaf0099412ddfa829998aa525c0e96f879d04",
+      "crc32": "c0dd7aac"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2725_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2725_S42_R1.json",
+      "size_bytes": 1426,
+      "sha256": "e65e0b6b30acf8284632bd20c24d27d77a28af1fc8c7ed87ee519c3234878c5e",
+      "crc32": "21f165bb"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_httpx_3672_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_httpx_3672_S43_R2.json",
+      "size_bytes": 1348,
+      "sha256": "435a954a889b53aaae97ae0d33fea24f003b0570f52bb6b75ea0224a425f76a0",
+      "crc32": "ba58d2f1"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_fastapi_5077_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_fastapi_5077_S44_R3.json",
+      "size_bytes": 1516,
+      "sha256": "72d7783083b1711d21e4486f37ee500259c64ce2674b3d491cf3f8b9a1563a62",
+      "crc32": "b01b9d7a"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2943_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2943_S42_R1.json",
+      "size_bytes": 1239,
+      "sha256": "71885661df7584bb83ee0cfba73966331ec7c61d70ac6b2849599c7f7ff9db96",
+      "crc32": "e30a75eb"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_httpx_3672_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_httpx_3672_S43_R2.json",
+      "size_bytes": 1351,
+      "sha256": "b4e157dddad415adba7485468ac31c4a581e83f55914a077ffc08a3bb773cb4a",
+      "crc32": "638e43e6"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_httpx_3672_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_httpx_3672_S44_R3.json",
+      "size_bytes": 956,
+      "sha256": "6a3fcf49b9026201e39299a2056fb1bed96eb2d0ae87555b3bdbc20f38c54d49",
+      "crc32": "aa217c08"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_httpx_3672_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_httpx_3672_S44_R3.json",
+      "size_bytes": 1348,
+      "sha256": "91c3a142d29489697659838f40c203287f4514e2cc064f89616e0ce2bf1def09",
+      "crc32": "98b96f9c"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2725_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2725_S42_R1.json",
+      "size_bytes": 1417,
+      "sha256": "59bc45eceb96ca6b01bcb36d5c74d01c944d04084f373b9d9a933c718ef0dfbc",
+      "crc32": "d0840fa2"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_requests_6589_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_requests_6589_S43_R2.json",
+      "size_bytes": 1257,
+      "sha256": "8abcad282b569a5154b05636535d665a6ed015ac58f2dff1e870df0a8c670c36",
+      "crc32": "f22fbde3"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_fastapi_5077_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_fastapi_5077_S44_R3.json",
+      "size_bytes": 1513,
+      "sha256": "18dc4fd87031c76b1cda27722ddeadd1701cb1129fca82d9a7acfdab0743e2c9",
+      "crc32": "0c4f31a6"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2725_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2725_S44_R3.json",
+      "size_bytes": 1426,
+      "sha256": "f5d87943e7c258a831463b152c39ec36282e057d672f1c2998352c6da99cab1c",
+      "crc32": "afd1ab5b"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_fastapi_5077_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_fastapi_5077_S43_R2.json",
+      "size_bytes": 984,
+      "sha256": "c1f950f8f5964f065b45698e7a3303115142f048be479292adeabbbad86a2c9c",
+      "crc32": "af27ff8d"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2725_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2725_S42_R1.json",
+      "size_bytes": 1424,
+      "sha256": "e664cf64a3fa9272c893ae0b60c6b1679159b1b8f174af73cb05a7f1c66653e9",
+      "crc32": "cd6a6187"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_fastapi_5077_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_fastapi_5077_S43_R2.json",
+      "size_bytes": 1516,
+      "sha256": "1620714e7bdf598f5b07c7795b17b6865bc2fafb0a9b7f0344aac59df6b0a7ce",
+      "crc32": "9ddeeacb"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2943_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2943_S43_R2.json",
+      "size_bytes": 1239,
+      "sha256": "deee37582a11f16e5fe31a2c812a42730c35c495de41d7f829d1b8f1b38471b2",
+      "crc32": "9809dea1"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_httpx_3672_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_httpx_3672_S42_R1.json",
+      "size_bytes": 956,
+      "sha256": "0d1a4d998c5075332a69c91e0dc2b8ae260053e3f00f1c7f7d2bf363411659a4",
+      "crc32": "7725a433"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2943_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2943_S44_R3.json",
+      "size_bytes": 1239,
+      "sha256": "c2019446af0c9fdd99f857727bf28491e7b4ca1984d843f0781f27916f252c5e",
+      "crc32": "34f9c9dc"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_requests_6589_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_requests_6589_S44_R3.json",
+      "size_bytes": 1256,
+      "sha256": "aa62d92e60cc3ca06903103ac473f0a40fce1884450f827d6b2af4cd1676da1f",
+      "crc32": "e7eea1a4"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_fastapi_5077_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_fastapi_5077_S44_R3.json",
+      "size_bytes": 984,
+      "sha256": "139be17a781861b6de9969bcc9c84f6852a836486c1c3e5a5b318d47cc2853bf",
+      "crc32": "9727a58c"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2725_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2725_S43_R2.json",
+      "size_bytes": 1427,
+      "sha256": "1192985e5b9eee0faa1861af8205d14cdf086fc16a2d20eb8169cd724b1c3ec5",
+      "crc32": "fa13189e"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_fastapi_5077_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_fastapi_5077_S42_R1.json",
+      "size_bytes": 1515,
+      "sha256": "42b4a3e1b9f8eab05dc1cccb4cf334fc318a16d36e28a761601e62cbad6b4437",
+      "crc32": "2c28bf8f"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_httpx_3672_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_httpx_3672_S43_R2.json",
+      "size_bytes": 956,
+      "sha256": "f8ba1b50635e64a9657715b8708aadcc33a86238a66d9ff236c69f0eadabe049",
+      "crc32": "e80ba768"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2943_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2943_S42_R1.json",
+      "size_bytes": 1250,
+      "sha256": "7b81bba35b3342681c238930299b1c5d89641bc91b021611a656078268a93bcd",
+      "crc32": "2a64d311"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2943_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2943_S44_R3.json",
+      "size_bytes": 1249,
+      "sha256": "0eff2cfb541845b2be17856e21a13067f0f02d6c423b6ecb0c2bebd5fd9f1b36",
+      "crc32": "dad82000"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2943_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2943_S44_R3.json",
+      "size_bytes": 1247,
+      "sha256": "39207f2fd19970d59aca98fb010b05e9e8597b298f0377836a68dd682d0aa7b4",
+      "crc32": "81b6af52"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_fastapi_5077_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_fastapi_5077_S43_R2.json",
+      "size_bytes": 1512,
+      "sha256": "92615ecf17463887b29429a92445fa297909400cc72eefd225bb51fbaaba6c68",
+      "crc32": "51f046b7"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_requests_6589_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_requests_6589_S42_R1.json",
+      "size_bytes": 1249,
+      "sha256": "e6301654b62c314b45633e3a47888f5ae47e0add9c8b36871ac530152c6155fd",
+      "crc32": "55878d58"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_requests_6589_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_requests_6589_S44_R3.json",
+      "size_bytes": 1249,
+      "sha256": "70f9154d390542ed141c2c55e33f0ba084bf0f58dfa758fed07fa6fc365913d1",
+      "crc32": "7cc03fab"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2725_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2725_S44_R3.json",
+      "size_bytes": 950,
+      "sha256": "1a2f84e463d0ae51c9f15e1fdd9f38e4ef95133c61fe11655f56f6fb1485ca21",
+      "crc32": "e9d0461b"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2725_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2725_S43_R2.json",
+      "size_bytes": 1424,
+      "sha256": "76ba09ec5c13a2f52a9a2ca5dbeb077f89e7263153852c4514a7d3f8dad075d2",
+      "crc32": "3c1508c3"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_requests_6589_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_requests_6589_S44_R3.json",
+      "size_bytes": 1257,
+      "sha256": "7a1c6c8a5d0a7098e0b3d122ac2be3fc6f9f353beaa1e3886398ed24fe867aea",
+      "crc32": "8c67b611"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_requests_6589_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_requests_6589_S42_R1.json",
+      "size_bytes": 1257,
+      "sha256": "192a5be7590c5b4000309316f6536ad8957217b2416520884d032a162e67fbae",
+      "crc32": "0e0e3ac5"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_fastapi_5077_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_fastapi_5077_S42_R1.json",
+      "size_bytes": 984,
+      "sha256": "a62035a842c68a7df5ae484f36638893eaa462febee9a92dd622b808dd60c1f7",
+      "crc32": "ce60a0ac"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2943_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_rich_2943_S43_R2.json",
+      "size_bytes": 1250,
+      "sha256": "9426b8a83fdbb612131d0c97d8a535bb0d4e2f683b019eaf8a4d412e84133c1a",
+      "crc32": "8a09c428"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_fastapi_5077_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_fastapi_5077_S42_R1.json",
+      "size_bytes": 1513,
+      "sha256": "abbb6ca53438da434fd835f590e694f27ddbf9d82f4d679e447ca15f23c381a7",
+      "crc32": "72bd6307"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_httpx_3672_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_httpx_3672_S44_R3.json",
+      "size_bytes": 1351,
+      "sha256": "b854115069a74f103fd5f0fa1e208b8ee34da36c34011aae28d79cc1d96d16ad",
+      "crc32": "933408a1"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_httpx_3672_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_httpx_3672_S42_R1.json",
+      "size_bytes": 1351,
+      "sha256": "da9348860dc3b33fea5d7a42bfa078c4df2402434c9c940a387f45e6a783ba15",
+      "crc32": "d831d62b"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2943_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2943_S42_R1.json",
+      "size_bytes": 1247,
+      "sha256": "059017f8286185fb05b4454c33b441fa286a2f2e57492a174e29b7c0d5d1374e",
+      "crc32": "2eb5108b"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_requests_6589_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_requests_6589_S43_R2.json",
+      "size_bytes": 1256,
+      "sha256": "40a7fd88f2db52ff14c0cacce13b5d47b18849ec3fa13f202e30bcf40219a957",
+      "crc32": "e12390d6"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2725_S43_R2.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.2_BASELINE_rich_2725_S43_R2.json",
+      "size_bytes": 1417,
+      "sha256": "ae0ec5a99fc328eec0740a1dd85de97e7cf3d6e67ad6193fe56aaa5cc71af755",
+      "crc32": "5b5844e8"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_requests_6589_S42_R1.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_TD_requests_6589_S42_R1.json",
+      "size_bytes": 1256,
+      "sha256": "336a54ca8c99275d21d9934c0978f5d12846a06a067345fa6254cf36fe457086",
+      "crc32": "50600610"
+    },
+    {
+      "archive_path": "v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2725_S44_R3.json",
+      "destination_path": "gemma4/v3_3_audit_deliverables/trajectories/RUN_V3.3_T_rich_2725_S44_R3.json",
+      "size_bytes": 1424,
+      "sha256": "561cafafc61e8bd57a80fb1d09628d7ff537462d6016822ce3a4cc94e92aa038",
+      "crc32": "be38c573"
+    },
+    {
+      "archive_path": "V3_3_INDEPENDENT_AUDIT_MANIFEST.md",
+      "destination_path": "gemma4/v3_3_audit_deliverables/_archive_root/V3_3_INDEPENDENT_AUDIT_MANIFEST.md",
+      "size_bytes": 6939,
+      "sha256": "001fd131af0422bd42b386dbe22db8e40ae51f2b3fdc5daa7f965c67b9111d0e",
+      "crc32": "f7a6e41d"
+    }
+  ],
+  "checks": {
+    "zip_crc_test": "PASS",
+    "json_file_count": 46,
+    "json_parse_errors": [],
+    "g1_ledger_rows": 45,
+    "g1_unique_run_ids": 45,
+    "missing_trajectory_matches": [],
+    "synthetic_metrics_pattern_found": true,
+    "g1_script_launches_subprocess": false,
+    "hardcoded_absolute_path_scripts": [
+      "scripts/generate_manifest.py",
+      "scripts/run_v3_3_ablation_suite.py",
+      "scripts/run_g1_g2_experiments.py"
+    ]
+  }
+}\n
