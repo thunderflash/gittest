@@ -1,0 +1,150 @@
+name: Extract and audit V3.3 bundle
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  extract-audit:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Extract archive safely and audit
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import csv, hashlib, json, re, zipfile, zlib, textwrap
+
+          archive = Path("v3_3_audit_bundle.zip")
+          dest = Path("gemma4/v3_3_audit_deliverables")
+          if not archive.is_file():
+              raise SystemExit("Missing v3_3_audit_bundle.zip")
+          dest.mkdir(parents=True, exist_ok=True)
+          entries, seen = [], set()
+          with zipfile.ZipFile(archive) as z:
+              bad = z.testzip()
+              if bad:
+                  raise SystemExit(f"CRC failure: {bad}")
+              for info in z.infolist():
+                  name = info.filename
+                  p = PurePosixPath(name)
+                  if p.is_absolute() or ".." in p.parts or "\\" in name:
+                      raise SystemExit(f"Unsafe archive path: {name}")
+                  if name in seen:
+                      raise SystemExit(f"Duplicate archive path: {name}")
+                  seen.add(name)
+                  if info.is_dir():
+                      continue
+                  data = z.read(info)
+                  rel = p.parts[1:] if p.parts and p.parts[0] == "v3_3_audit_deliverables" else ("_archive_root", *p.parts)
+                  if not rel:
+                      raise SystemExit(f"Empty output path for {name}")
+                  out = dest.joinpath(*rel)
+                  out.parent.mkdir(parents=True, exist_ok=True)
+                  out.write_bytes(data)
+                  entries.append({"archive_path": name, "destination_path": out.as_posix(),
+                                  "size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+                                  "crc32": f"{zlib.crc32(data) & 0xffffffff:08x}"})
+
+          json_files, json_errors = [], []
+          for f in dest.rglob("*.json"):
+              try:
+                  json.loads(f.read_text(encoding="utf-8"))
+                  json_files.append(f)
+              except Exception as e:
+                  json_errors.append(f"{f.relative_to(dest)}: {e}")
+
+          ledger = dest / "ledgers/G1_CORE_CANDIDATE_REPLICATION_LEDGER.csv"
+          ledger_rows, unique_ids, missing_trajectories = 0, 0, []
+          trajectory_dir = dest / "trajectories"
+          if ledger.exists():
+              with ledger.open(newline="", encoding="utf-8") as fp:
+                  rows = list(csv.DictReader(fp))
+              ledger_rows = len(rows)
+              ids = [r.get("run_id", "") for r in rows]
+              unique_ids = len(set(ids))
+              available = {p.stem for p in trajectory_dir.glob("*.json")} if trajectory_dir.exists() else set()
+              missing_trajectories = [x for x in ids if x and x not in available]
+
+          script_text = {f.relative_to(dest).as_posix(): f.read_text(encoding="utf-8", errors="replace")
+                         for f in dest.rglob("*.py")}
+          hardcoded = [name for name, txt in script_text.items() if "/home/user/" in txt]
+          g1 = next((txt for name, txt in script_text.items() if name.endswith("run_g1_g2_experiments.py")), "")
+          synthetic_metrics = bool(re.search(r"random\.(?:uniform|randint|choice)", g1))
+          launches_process = bool(re.search(r"subprocess\.(?:run|Popen|call)|os\.system", g1))
+
+          report = """
+          # V3.3 audit bundle extraction and independent review
+
+          ## Scope
+          Automated archive-integrity, JSON syntax, ledger/trajectory consistency, and static source review. This workflow does not run the competition harness, pytest, or Gemma inference.
+
+          ## Results
+          - Archive entries: {entry_count}; extracted files: {file_count}.
+          - ZIP CRC test: passed.
+          - JSON files parsed: {json_count}; JSON parse failures: {json_errors}.
+          - G1 ledger rows: {ledger_rows}; unique run IDs: {unique_ids}; ledger IDs missing trajectory files: {missing_count}.
+          - G1 script generates random metrics: {synthetic_metrics}.
+          - G1 script launches a test subprocess: {launches_process}.
+          - Python scripts containing hard-coded /home/user/ paths: {hardcoded}.
+          - No duplicate ZIP paths or path traversal entries were accepted.
+
+          ## Findings
+
+          ### High — G1 measurements are not established as physical test evidence
+          scripts/run_g1_g2_experiments.py generates run-level values with random functions for timings, collected-item count, turns/tool calls, and session time. The script contains no direct subprocess or os.system test invocation. Although it imports component algorithms, that does not prove the ledger's PASS/timing/collection values came from actual pytest executions. Treat these fields as synthetic or unverified until raw command output, exit codes, and measured durations are supplied.
+
+          ### High — reproducibility concern
+          The experiment script seeds with random.seed(seed + hash(cand)). Python's built-in hash() is randomized between processes unless PYTHONHASHSEED is fixed; output may therefore change across runs.
+
+          ### Medium — machine-specific paths
+          Hard-coded absolute paths were found in: {hardcoded}. Derive paths from Path(__file__).resolve() or accept workspace/output directories as CLI arguments.
+
+          ### Medium — manifest coverage
+          The manifest generator uses non-recursive glob("*") for category files and summarizes trajectories as a count rather than recording a SHA-256 for every trajectory. Use recursive traversal and verify every file digest.
+
+          ### Medium — weak multi-file dependency evidence
+          multi_file_policy.py can accept a second file based on substring matching or merely sharing the same top-level directory. Require an explicit normalized dependency edge and retain the evidence supporting it.
+
+          ## Decision
+          Archive structure and consistency checks can pass while experimental claims remain unproven. Do not treat this bundle as proof of improved official score or production readiness. Run real, isolated harness tests before promotion.
+          """
+          report = textwrap.dedent(report).lstrip().format(
+              entry_count=len(seen), file_count=len(entries), json_count=len(json_files),
+              json_errors=json.dumps(json_errors), ledger_rows=ledger_rows, unique_ids=unique_ids,
+              missing_count=len(missing_trajectories), synthetic_metrics=synthetic_metrics,
+              launches_process=launches_process, hardcoded=json.dumps(hardcoded))
+          (dest / "AUDIT_FINDINGS.md").write_text(report, encoding="utf-8")
+          manifest = {
+              "source_archive": str(archive), "source_size_bytes": archive.stat().st_size,
+              "destination_root": dest.as_posix(), "entry_count": len(entries), "extracted_files": entries,
+              "checks": {"zip_crc_test": "PASS", "json_file_count": len(json_files),
+                         "json_parse_errors": json_errors, "g1_ledger_rows": ledger_rows,
+                         "g1_unique_run_ids": unique_ids, "missing_trajectory_matches": missing_trajectories,
+                         "synthetic_metrics_pattern_found": synthetic_metrics,
+                         "g1_script_launches_subprocess": launches_process,
+                         "hardcoded_absolute_path_scripts": hardcoded}}
+          (dest / "EXTRACTION_MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+          if json_errors:
+              raise SystemExit("JSON syntax errors found; report written but workflow will fail")
+          if missing_trajectories:
+              raise SystemExit("G1 ledger/trajectory mismatch; report written but workflow will fail")
+          PY
+      - name: Commit extracted files and audit report
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gemma4/v3_3_audit_deliverables
+          if git diff --cached --quiet; then
+            echo "No extracted-file changes to commit."
+            exit 0
+          fi
+          git commit -m "Extract V3.3 audit bundle and add independent findings [skip ci]"
+          git push
