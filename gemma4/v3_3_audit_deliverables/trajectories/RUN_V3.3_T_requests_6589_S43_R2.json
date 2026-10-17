@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.3_T_requests_6589_S43_R2",
+  "candidate": "V3.3_T",
+  "task_id": "requests_6589",
+  "seed": 43,
+  "run_idx": 2,
+  "execution_metrics": {
+    "turns_used": 8,
+    "tool_calls": 16,
+    "test_wall_time_sec": 13.1,
+    "session_wall_time_sec": 32.7,
+    "items_collected": 1,
+    "test_exit_code": 0
+  },
+  "test_discovery": {
+    "tier": "TIER_1_FILTERED_FILE",
+    "command": "python -m pytest tests/test_utils.py -k \"super_len\" -q"
+  },
+  "diagnostics": {
+    "category": "RAW_OUTPUT",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_utils.py::test_super_len_custom_stream - AttributeError: 'CustomStream' object has no attribute 'len'",
+    "patch_applied": "diff --git a/requests/utils.py b/requests/utils.py\n--- a/requests/utils.py\n+++ b/requests/utils.py\n@@ -102,6 +102,8 @@ def super_len(o):\n     if hasattr(o, \"len\"):\n         l = o.len\n+        if isinstance(l, int):\n+            return l\n     return len(o)\n",
+    "green_test_pass": true,
+    "verified_exit_code_zero": true
+  },
+  "verification_guards": {
+    "patch_non_empty": true,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": true
+  }
+}

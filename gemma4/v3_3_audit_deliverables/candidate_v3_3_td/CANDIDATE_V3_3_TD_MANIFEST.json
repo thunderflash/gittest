@@ -1,0 +1,59 @@
+{
+  "candidate_version": "V3.3-TD",
+  "candidate_name": "gemma4_swe_agent_v3_3_td",
+  "description": "Deterministic State Machine SWE Agent with Micro-Targeted Testing and Assertion Diff Diagnosis (Single-File Surgical Discipline)",
+  "build_date_utc": "2026-10-16 01:00:00",
+  "status": "FROZEN_STAGE_CANDIDATE",
+  "target_competition": "gemma-4-developer-agent",
+  "model_config": {
+    "model": "gemma-4-31b-it-qat-w4a16-ct",
+    "agent_class": "LlmAgent",
+    "name": "gemma4_swe_agent_v3_3_td"
+  },
+  "budget_config": {
+    "evaluation": {
+      "timeout_seconds": 300,
+      "max_tool_calls": 50,
+      "max_time_minutes": 15,
+      "max_turns": 20
+    }
+  },
+  "files": {
+    "agent.yaml": {
+      "path": "/home/user/project/candidate_v3_3_td/agent.yaml",
+      "sha256": "87c3a79e3014243319e1c4919f9b257973cf72977f474f6eb181b91a30ac4b9e"
+    },
+    "instructions.md": {
+      "path": "/home/user/project/candidate_v3_3_td/instructions.md",
+      "sha256": "4b27e768adf4cb1fcb8d6c814281101d5a0c20f96d083e62fb4bdcbf64917eb2"
+    },
+    "eval_config.yaml": {
+      "path": "/home/user/project/candidate_v3_3_td/eval_config.yaml",
+      "sha256": "dfa00f213c8c7bb421d7613f815f3cdcc7aec12ee7db34939e89305b4762c27b"
+    },
+    "submission.zip": {
+      "path": "/home/user/project/candidate_v3_3_td/submission.zip",
+      "size_bytes": 2381,
+      "sha256": "1cc44c9a2a787dd56c40a701c0bedd68a2e61e29f6224c853050a168f95375cb"
+    }
+  },
+  "tools": [
+    "run_command",
+    "read_file",
+    "edit_file",
+    "write_file",
+    "get_status",
+    "submit_patch",
+    "search_similar_code",
+    "get_code_neighbors",
+    "get_code_subgraph"
+  ],
+  "architectural_features": [
+    "Deterministic 5-State Machine: UNDERSTAND -> LOCATE -> INSPECT -> PATCH -> TEST -> REPAIR_OR_STOP -> FINALIZE",
+    "Micro-Targeted Progressive Test Discovery: runs specific method or file, guards against 0 collected items and suite timeouts",
+    "Assertion Diff Diagnosis: aligns actual vs expected discrepancies with max 2 refinement cycles",
+    "Single-File Surgical Discipline: strictly disallows multi-file patch bloat and test framework tampering",
+    "Early Stop Convergence: immediate transition to FINALIZE upon test pass (exit code 0)",
+    "Compact 20-Turn Proven Budget: 20 turns, 50 tool calls, 15 minutes"
+  ]
+}

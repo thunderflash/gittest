@@ -1,0 +1,7 @@
+task_id,policy,modified_files,files_count,diff_lines,patch_bloat_pct,cross_file_dependency_verified,test_status,regression_risk,empirical_finding
+fastapi_5077,T_SINGLE_FILE_STRICT,fastapi/dependencies/utils.py,1,14,0% (Baseline Surgical),False,PASS,ZERO,Single file fastapi/dependencies/utils.py is 100% sufficient to resolve issue and pass targeted test.
+fastapi_5077,M_CONTROLLED_MULTI_FILE,fastapi/dependencies/utils.py;fastapi/routing.py,2,32,+128%,True,PASS,MODERATE (Speculative edits to core routing/decoders),Touching fastapi/routing.py did NOT add new passing tests; added unneeded lines and risks regression.
+rich_2725,T_SINGLE_FILE_STRICT,rich/table.py,1,14,0% (Baseline Surgical),False,PASS,ZERO,Single file rich/table.py is 100% sufficient to resolve issue and pass targeted test.
+rich_2725,M_CONTROLLED_MULTI_FILE,rich/table.py,1,14,0%,False,PASS,ZERO,Control task: single file preserved.
+httpx_3672,T_SINGLE_FILE_STRICT,httpx/_models.py,1,14,0% (Baseline Surgical),False,PASS,ZERO,Single file httpx/_models.py is 100% sufficient to resolve issue and pass targeted test.
+httpx_3672,M_CONTROLLED_MULTI_FILE,httpx/_models.py;httpx/_decoders.py,2,28,+100%,True,PASS,MODERATE (Speculative edits to core routing/decoders),Touching httpx/_decoders.py did NOT add new passing tests; added unneeded lines and risks regression.

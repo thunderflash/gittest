@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.2_BASELINE_rich_2725_S43_R2",
+  "candidate": "V3.2_BASELINE",
+  "task_id": "rich_2725",
+  "seed": 43,
+  "run_idx": 2,
+  "execution_metrics": {
+    "turns_used": 17,
+    "tool_calls": 34,
+    "test_wall_time_sec": 33.3,
+    "session_wall_time_sec": 75.5,
+    "items_collected": 22,
+    "test_exit_code": 0
+  },
+  "test_discovery": {
+    "tier": "STANDARD_FILE",
+    "command": "python -m pytest tests/test_table.py -q"
+  },
+  "diagnostics": {
+    "category": "RAW_OUTPUT",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_table.py::test_table_render_min_width - AssertionError: assert 12 == 15",
+    "patch_applied": "diff --git a/rich/table.py b/rich/table.py\n--- a/rich/table.py\n+++ b/rich/table.py\n@@ -741,6 +741,9 @@ def _render(self, console: Console, options: ConsoleOptions) -> RenderResult:\n         max_width = options.max_width\n         if not self.expand:\n             max_width = min(max_width, sum(widths))\n+        if self.min_width is not None:\n+            max_width = max(max_width, self.min_width)\n         return _render_table(self, console, options, max_width)\n",
+    "green_test_pass": true,
+    "verified_exit_code_zero": true
+  },
+  "verification_guards": {
+    "patch_non_empty": true,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": true
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.3_TD_rich_2943_S43_R2",
+  "candidate": "V3.3_TD",
+  "task_id": "rich_2943",
+  "seed": 43,
+  "run_idx": 2,
+  "execution_metrics": {
+    "turns_used": 10,
+    "tool_calls": 20,
+    "test_wall_time_sec": 11.9,
+    "session_wall_time_sec": 36.0,
+    "items_collected": 1,
+    "test_exit_code": 0
+  },
+  "test_discovery": {
+    "tier": "TIER_1_FILTERED_FILE",
+    "command": "python -m pytest tests/test_cells.py -k \"cell_len\" -q"
+  },
+  "diagnostics": {
+    "category": "RAW_FAILURE",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_cells.py::test_cell_len_emoji_zwj - AssertionError: assert 2 == 1",
+    "patch_applied": "diff --git a/rich/cells.py b/rich/cells.py\n--- a/rich/cells.py\n+++ b/rich/cells.py\n@@ -34,6 +34,8 @@ def cell_len(text: str) -> int:\n     total = 0\n     for char in text:\n+        if char in _ZWJ_CHARS:\n+            continue\n         total += get_character_cell_size(char)\n     return total\n",
+    "green_test_pass": true,
+    "verified_exit_code_zero": true
+  },
+  "verification_guards": {
+    "patch_non_empty": true,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": true
+  }
+}

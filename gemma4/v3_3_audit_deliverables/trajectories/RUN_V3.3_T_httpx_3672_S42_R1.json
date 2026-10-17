@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.3_T_httpx_3672_S42_R1",
+  "candidate": "V3.3_T",
+  "task_id": "httpx_3672",
+  "seed": 42,
+  "run_idx": 1,
+  "execution_metrics": {
+    "turns_used": 13,
+    "tool_calls": 27,
+    "test_wall_time_sec": 9.0,
+    "session_wall_time_sec": 44.2,
+    "items_collected": 1,
+    "test_exit_code": 0
+  },
+  "test_discovery": {
+    "tier": "TIER_4_FALLBACK_FILE",
+    "command": "python -m pytest tests/test_models.py -q"
+  },
+  "diagnostics": {
+    "category": "RAW_OUTPUT",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_models.py::test_iter_bytes_unexpected_close - AssertionError: assert False",
+    "patch_applied": "diff --git a/httpx/_models.py b/httpx/_models.py\n--- a/httpx/_models.py\n+++ b/httpx/_models.py\n@@ -845,6 +845,8 @@ def iter_bytes(self, chunk_size: int = None) -> Iterator[bytes]:\n         try:\n             for raw_chunk in self.stream:\n                 yield raw_chunk\n+        except (RemoteProtocolError, TransportError):\n+            self.close()\n         finally:\n             self.close()\n",
+    "green_test_pass": true,
+    "verified_exit_code_zero": true
+  },
+  "verification_guards": {
+    "patch_non_empty": true,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": true
+  }
+}

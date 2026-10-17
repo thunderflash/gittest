@@ -1,0 +1,17 @@
+# Declarative Task Controller SWE Agent Candidate V3.3-TD.
+# Sandboxed compilation via adk-submission compile_submission pipeline.
+agent_class: LlmAgent
+name: gemma4_swe_agent_v3_3_td
+model: gemma-4-31b-it-qat-w4a16-ct
+description: Deterministic state-machine SWE agent with micro-targeted testing and assertion diff diagnosis.
+instruction: !include instructions.md
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - write_file
+  - get_status
+  - submit_patch
+  - search_similar_code
+  - get_code_neighbors
+  - get_code_subgraph

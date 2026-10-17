@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.2_BASELINE_fastapi_5077_S43_R2",
+  "candidate": "V3.2_BASELINE",
+  "task_id": "fastapi_5077",
+  "seed": 43,
+  "run_idx": 2,
+  "execution_metrics": {
+    "turns_used": 13,
+    "tool_calls": 26,
+    "test_wall_time_sec": 29.7,
+    "session_wall_time_sec": 63.7,
+    "items_collected": 27,
+    "test_exit_code": 1
+  },
+  "test_discovery": {
+    "tier": "STANDARD_FILE",
+    "command": "python -m pytest tests/test_dependencies.py -q"
+  },
+  "diagnostics": {
+    "category": "RAW_OUTPUT",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_dependencies.py::test_wrapped_dependency_forward_ref - NameError: name 'Item' is not defined",
+    "patch_applied": null,
+    "green_test_pass": false,
+    "verified_exit_code_zero": false
+  },
+  "verification_guards": {
+    "patch_non_empty": false,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": false
+  }
+}
