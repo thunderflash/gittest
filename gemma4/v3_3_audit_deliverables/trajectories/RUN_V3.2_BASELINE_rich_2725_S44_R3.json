@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.2_BASELINE_rich_2725_S44_R3",
+  "candidate": "V3.2_BASELINE",
+  "task_id": "rich_2725",
+  "seed": 44,
+  "run_idx": 3,
+  "execution_metrics": {
+    "turns_used": 17,
+    "tool_calls": 35,
+    "test_wall_time_sec": 35.6,
+    "session_wall_time_sec": 76.5,
+    "items_collected": 34,
+    "test_exit_code": 1
+  },
+  "test_discovery": {
+    "tier": "STANDARD_FILE",
+    "command": "python -m pytest tests/test_table.py -q"
+  },
+  "diagnostics": {
+    "category": "RAW_OUTPUT",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_table.py::test_table_render_min_width - AssertionError: assert 12 == 15",
+    "patch_applied": null,
+    "green_test_pass": false,
+    "verified_exit_code_zero": false
+  },
+  "verification_guards": {
+    "patch_non_empty": false,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": false
+  }
+}

@@ -1,0 +1,537 @@
+{
+  "audit": "Gate C-3 closeout & decision package",
+  "candidates": [
+    {
+      "archive": "Phase2D_Run5_已存在A2执行与版本漂移证据包.zip",
+      "archive_sha256": "6eb693c4770796e926f376d2223b0fa048a8ce5c0a4c5687b087b1fcfaa5a452",
+      "candidate": "A2",
+      "classification": "REF_SET_UNIFORM",
+      "declared_remote_status": "ERROR",
+      "declared_status": "ERROR",
+      "expected_kernel_id": 137770599,
+      "expected_ref": "thunderflash/fastapi-5077-cpu-reference-a2-20261008",
+      "kernel_id_consistent": true,
+      "kernel_ids": {
+        "expected": 137770599,
+        "push_result": 137770599,
+        "review": 137770599
+      },
+      "kernel_title": "FastAPI 5077 CPU Reference A2 20261008",
+      "owner": "thunderflash",
+      "records": [
+        {
+          "bytes": 647,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/existing_a2_execution_20261009/job/kernel-metadata.json",
+          "sha256": "c15d7baad2003c5dd94f4255afe8c5684f64052042b61e051bbaba66ad11a7c8"
+        },
+        {
+          "bytes": 599,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/existing_a2_execution_20261009/pre_submit_pull/kernel-metadata.json",
+          "sha256": "24990fa50d6c3d910665845dc9a832abf02543f9f5df145d54926371cbd7e285"
+        },
+        {
+          "bytes": 344,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/existing_a2_execution_20261009/push_attempted.json",
+          "sha256": "069653489261b4b444c2818741a15507aaeba3a0e677f8b0d3d63b9952a550d4"
+        },
+        {
+          "bytes": 324,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/existing_a2_execution_20261009/push_result.json",
+          "sha256": "216b3be2208ba0d25a6057178d68f6d0044455992c4b282c7250ae4b60df190d"
+        },
+        {
+          "bytes": 162,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/existing_a2_execution_20261009/remote_status.json",
+          "sha256": "1ac84fefcdd356c2736f16f7f27d5d7540fa4f549506f75344fb531d2a180ce5"
+        },
+        {
+          "bytes": 1788,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/existing_a2_execution_20261009/review/review.json",
+          "sha256": "7861b1b7a617009cd85a88061b515ad4359c6b009ede2f99fb5a8cbaf9683f01"
+        }
+      ],
+      "ref_set_distinct": [
+        "thunderflash/fastapi-5077-cpu-reference-a2-20261008"
+      ],
+      "ref_set_uniform": true,
+      "refs": {
+        "metadata_id": "thunderflash/fastapi-5077-cpu-reference-a2-20261008",
+        "remote_status": "thunderflash/fastapi-5077-cpu-reference-a2-20261008",
+        "requested_push_marker": "thunderflash/fastapi-5077-cpu-reference-a2-20261008",
+        "review_actual_ref": null,
+        "review_ref_difference_note": null,
+        "review_requested_ref": null,
+        "server_ref_from_url": "thunderflash/fastapi-5077-cpu-reference-a2-20261008",
+        "server_returned_push_result": "thunderflash/fastapi-5077-cpu-reference-a2-20261008",
+        "server_returned_push_url": "https://www.kaggle.com/code/thunderflash/fastapi-5077-cpu-reference-a2-20261008"
+      },
+      "remote_fact": "UNCONFIRMED — local ref observations are not independent proof of Kaggle acceptance/execution.",
+      "review_documents_requested_vs_actual": false,
+      "server_slug_equals_title_slug": true,
+      "spelling_census_members": {
+        "fastapi-5077-cpu-reference-a2-20261008": 12
+      },
+      "title_slug": "fastapi-5077-cpu-reference-a2-20261008"
+    },
+    {
+      "archive": "Phase2D_Run5_原环境恢复与校准证据包.zip",
+      "archive_sha256": "71346f4a6b09091ba86346a8697793601d108a065f36421e792bab41b4745eff",
+      "candidate": "A4",
+      "classification": "REF_SET_UNIFORM",
+      "declared_remote_status": "ERROR",
+      "declared_status": "ERROR",
+      "expected_kernel_id": 137782288,
+      "expected_ref": "thunderflash/fastapi-5077-cpu-pinned-a4-20261009",
+      "kernel_id_consistent": true,
+      "kernel_ids": {
+        "expected": 137782288,
+        "push_result": 137782288,
+        "review": null
+      },
+      "kernel_title": "FastAPI 5077 CPU Pinned A4 20261009",
+      "owner": "thunderflash",
+      "records": [
+        {
+          "bytes": 601,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_pinned_attempt4/job/kernel-metadata.json",
+          "sha256": "3c56a9e5ded954f0c6815f3b5e08bfcec65612ae38abc59a021bf24bf74f0366"
+        },
+        {
+          "bytes": 358,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_pinned_attempt4/push_attempted.json",
+          "sha256": "b261aa7b71b6b4cc154d94562788dcd9d6836b1aaaf372da8987be38acb7f6d7"
+        },
+        {
+          "bytes": 318,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_pinned_attempt4/push_result.json",
+          "sha256": "696acd3a347c0225624c65526dbc2666d8baa24942f750bdb6d037548507c245"
+        },
+        {
+          "bytes": 200,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_pinned_attempt4/remote_status.json",
+          "sha256": "42df12a09436a547a7867dcbccbf00fc982dc99b88e17a87fc88c370692fcea6"
+        },
+        {
+          "bytes": 1320,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_pinned_attempt4/review/review.json",
+          "sha256": "6d3af99a16f0a41f78afee51da033c69ba3e7510ca2b86bfebcc242e515db6f3"
+        }
+      ],
+      "ref_set_distinct": [
+        "thunderflash/fastapi-5077-cpu-pinned-a4-20261009"
+      ],
+      "ref_set_uniform": true,
+      "refs": {
+        "metadata_id": "thunderflash/fastapi-5077-cpu-pinned-a4-20261009",
+        "remote_status": "thunderflash/fastapi-5077-cpu-pinned-a4-20261009",
+        "requested_push_marker": "thunderflash/fastapi-5077-cpu-pinned-a4-20261009",
+        "review_actual_ref": null,
+        "review_ref_difference_note": null,
+        "review_requested_ref": null,
+        "server_ref_from_url": "thunderflash/fastapi-5077-cpu-pinned-a4-20261009",
+        "server_returned_push_result": "thunderflash/fastapi-5077-cpu-pinned-a4-20261009",
+        "server_returned_push_url": "https://www.kaggle.com/code/thunderflash/fastapi-5077-cpu-pinned-a4-20261009"
+      },
+      "remote_fact": "UNCONFIRMED — local ref observations are not independent proof of Kaggle acceptance/execution.",
+      "review_documents_requested_vs_actual": false,
+      "server_slug_equals_title_slug": true,
+      "spelling_census_members": {
+        "fastapi-5077-cpu-pinned-a4-20261009": 6
+      },
+      "title_slug": "fastapi-5077-cpu-pinned-a4-20261009"
+    },
+    {
+      "archive": "Phase2D_Run5_隔离后审与输入阻塞证据包.zip",
+      "archive_sha256": "af4febdac165d9419e01b725e85bbd41fbdff4a293fdca59811e0d6c0209b6ac",
+      "candidate": "A5",
+      "classification": "REF_SET_DIVERGENT_DOCUMENTED_SINGLE_PUSH",
+      "declared_remote_status": "ERROR",
+      "declared_status": "ERROR",
+      "expected_kernel_id": 137784471,
+      "expected_ref": "thunderflash/fastapi-5077-cpu-auditoverlay-a5-20261009",
+      "kernel_id_consistent": true,
+      "kernel_ids": {
+        "expected": 137784471,
+        "push_result": 137784471,
+        "review": 137784471
+      },
+      "kernel_title": "FastAPI 5077 CPU Audit Overlay A5 20261009",
+      "owner": "thunderflash",
+      "records": [
+        {
+          "bytes": 672,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_overlay_attempt5/job/kernel-metadata.json",
+          "sha256": "adcac0958a2684c3a391d825a2dffc30a92cd47b26f0d0f46d3d83bbc643ec2a"
+        },
+        {
+          "bytes": 364,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_overlay_attempt5/push_attempted.json",
+          "sha256": "da6523e61a97e23e3e8d52fb66e7d92b45597d5f1371791c8974e2c37d414c5d"
+        },
+        {
+          "bytes": 332,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_overlay_attempt5/push_result.json",
+          "sha256": "c2af9c805dca70c889e440552038d465a14f4346bd85d2b81044ceec4f63f864"
+        },
+        {
+          "bytes": 166,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_overlay_attempt5/remote_status.json",
+          "sha256": "68a5824a5cc45889debb32b0c3080f89a1a783be4208a7d33642b0c01acc47e1"
+        },
+        {
+          "bytes": 1421,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_overlay_attempt5/review/review.json",
+          "sha256": "0aac91cc5bebe9e2d5acd8ba1d75944abc7d2a79b61564128cc5bd017ea16abc"
+        }
+      ],
+      "ref_set_distinct": [
+        "thunderflash/fastapi-5077-cpu-audit-overlay-a5-20261009",
+        "thunderflash/fastapi-5077-cpu-auditoverlay-a5-20261009"
+      ],
+      "ref_set_uniform": false,
+      "refs": {
+        "metadata_id": "thunderflash/fastapi-5077-cpu-auditoverlay-a5-20261009",
+        "remote_status": "thunderflash/fastapi-5077-cpu-audit-overlay-a5-20261009",
+        "requested_push_marker": "thunderflash/fastapi-5077-cpu-auditoverlay-a5-20261009",
+        "review_actual_ref": "thunderflash/fastapi-5077-cpu-audit-overlay-a5-20261009",
+        "review_ref_difference_note": "Server returned slug with audit-overlay; only read-only monitor was redirected, no extra push",
+        "review_requested_ref": "thunderflash/fastapi-5077-cpu-auditoverlay-a5-20261009",
+        "server_ref_from_url": "thunderflash/fastapi-5077-cpu-audit-overlay-a5-20261009",
+        "server_returned_push_result": "thunderflash/fastapi-5077-cpu-audit-overlay-a5-20261009",
+        "server_returned_push_url": "https://www.kaggle.com/code/thunderflash/fastapi-5077-cpu-audit-overlay-a5-20261009"
+      },
+      "remote_fact": "UNCONFIRMED — local ref observations are not independent proof of Kaggle acceptance/execution.",
+      "review_documents_requested_vs_actual": true,
+      "server_slug_equals_title_slug": true,
+      "spelling_census_members": {
+        "fastapi-5077-cpu-audit-overlay-a5-20261009": 6,
+        "fastapi-5077-cpu-auditoverlay-a5-20261009": 3
+      },
+      "title_slug": "fastapi-5077-cpu-audit-overlay-a5-20261009"
+    },
+    {
+      "archive": "Phase2D_Run5_FastAPI有效配对证据包.zip",
+      "archive_sha256": "d3ffc7a46548ef1c1325b2454390e20b1a8afcea08873623895b24b67c73cadb",
+      "candidate": "A6",
+      "classification": "REF_SET_UNIFORM",
+      "declared_remote_status": "COMPLETE",
+      "declared_status": "COMPLETE",
+      "expected_kernel_id": 137803531,
+      "expected_ref": "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009",
+      "kernel_id_consistent": true,
+      "kernel_ids": {
+        "expected": 137803531,
+        "push_result": 137803531,
+        "review": null
+      },
+      "kernel_title": "FastAPI 5077 CPU Selfcontained A6 20261009",
+      "owner": "thunderflash",
+      "records": [
+        {
+          "bytes": 615,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_selfcontained_attempt6/job/kernel-metadata.json",
+          "sha256": "bb3e6b614ab21d09062f8c62be63985e01d08465b32bd3f7c36ec95fc846c496"
+        },
+        {
+          "bytes": 365,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_selfcontained_attempt6/push_attempted.json",
+          "sha256": "6711ed8d02d304d7bf379cb70c5c8bde3fbbe63d301a416fb2533fef4c905013"
+        },
+        {
+          "bytes": 332,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_selfcontained_attempt6/push_result.json",
+          "sha256": "a479afaeebb694550e26d95a278ec2dd03f95a89e18882d6406f2b0aa166487a"
+        },
+        {
+          "bytes": 210,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/cpu_selfcontained_attempt6/remote_status.json",
+          "sha256": "733957b1f9a457692df6e96129c68591ed7ee1faaa08525e8ee406ffd6a996a1"
+        }
+      ],
+      "ref_set_distinct": [
+        "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009"
+      ],
+      "ref_set_uniform": true,
+      "refs": {
+        "metadata_id": "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009",
+        "remote_status": "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009",
+        "requested_push_marker": "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009",
+        "review_actual_ref": null,
+        "review_ref_difference_note": null,
+        "review_requested_ref": null,
+        "server_ref_from_url": "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009",
+        "server_returned_push_result": "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009",
+        "server_returned_push_url": "https://www.kaggle.com/code/thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009"
+      },
+      "remote_fact": "UNCONFIRMED — local ref observations are not independent proof of Kaggle acceptance/execution.",
+      "review_documents_requested_vs_actual": false,
+      "server_slug_equals_title_slug": true,
+      "spelling_census_members": {
+        "fastapi-5077-cpu-selfcontained-a6-20261009": 5
+      },
+      "title_slug": "fastapi-5077-cpu-selfcontained-a6-20261009"
+    },
+    {
+      "archive": "Phase2D_Run5_FastAPI有效配对证据包.zip",
+      "archive_sha256": "d3ffc7a46548ef1c1325b2454390e20b1a8afcea08873623895b24b67c73cadb",
+      "candidate": "Run5_GPU",
+      "classification": "REF_SET_UNIFORM",
+      "declared_remote_status": "COMPLETE",
+      "declared_status": "COMPLETE",
+      "expected_kernel_id": 137805294,
+      "expected_ref": "thunderflash/fastapi-5077-phase2d-pair-run5-20261009",
+      "kernel_id_consistent": true,
+      "kernel_ids": {
+        "expected": 137805294,
+        "push_result": 137805294,
+        "review": null
+      },
+      "kernel_title": "FastAPI 5077 Phase2D Pair Run5 20261009",
+      "owner": "thunderflash",
+      "records": [
+        {
+          "bytes": 731,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/gpu_run5/job/kernel-metadata.json",
+          "sha256": "7b8dd4a4460c4abe678047e63525e22395f58c25e4ac6b708abac571e84802ea"
+        },
+        {
+          "bytes": 470,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/gpu_run5/push_attempted.json",
+          "sha256": "2a57a73022a2434f3a1f477acb8325ef86e200f7c3d464169a310b862bc0ec56"
+        },
+        {
+          "bytes": 326,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/gpu_run5/push_result.json",
+          "sha256": "9cf7cf1ce259af1fe2336a46eb080d575a511a22c905372d20b54ee069e0e345"
+        },
+        {
+          "bytes": 206,
+          "json": true,
+          "member": "phase2d/run5_fastapi_5077/gpu_run5/remote_status.json",
+          "sha256": "f684ae6ad4e525a00583c459b524d7483dfec21de043dd67a78432e45948d0aa"
+        }
+      ],
+      "ref_set_distinct": [
+        "thunderflash/fastapi-5077-phase2d-pair-run5-20261009"
+      ],
+      "ref_set_uniform": true,
+      "refs": {
+        "metadata_id": "thunderflash/fastapi-5077-phase2d-pair-run5-20261009",
+        "remote_status": "thunderflash/fastapi-5077-phase2d-pair-run5-20261009",
+        "requested_push_marker": "thunderflash/fastapi-5077-phase2d-pair-run5-20261009",
+        "review_actual_ref": null,
+        "review_ref_difference_note": null,
+        "review_requested_ref": null,
+        "server_ref_from_url": "thunderflash/fastapi-5077-phase2d-pair-run5-20261009",
+        "server_returned_push_result": "thunderflash/fastapi-5077-phase2d-pair-run5-20261009",
+        "server_returned_push_url": "https://www.kaggle.com/code/thunderflash/fastapi-5077-phase2d-pair-run5-20261009"
+      },
+      "remote_fact": "UNCONFIRMED — local ref observations are not independent proof of Kaggle acceptance/execution.",
+      "review_documents_requested_vs_actual": false,
+      "server_slug_equals_title_slug": true,
+      "spelling_census_members": {
+        "fastapi-5077-phase2d-pair-run5-20261009": 9
+      },
+      "title_slug": "fastapi-5077-phase2d-pair-run5-20261009"
+    }
+  ],
+  "consolidated_ledger": [
+    {
+      "gate": "C-1",
+      "report": "GateC1_report.md",
+      "summary": "A2 observed save-failure evidence complete; local manifest consistency FAIL (current_status.json hash drift, 14/15 checks passed); root cause UNKNOWN; no new submission authorized.",
+      "verdicts": {
+        "local_manifest_consistency": "FAIL",
+        "oracle_binding": "PASS",
+        "posthoc_logic": "PASS (OFFLINE ONLY)",
+        "public_regression_kaggle_cpu": "NOT_RUN",
+        "remote_submission_accepted": "FALSE (for the observed failed A2 push)",
+        "root_cause": "UNKNOWN",
+        "save_failure_evidence": "COMPLETE"
+      }
+    },
+    {
+      "gate": "C-1R",
+      "report": "GateC1R_report.md",
+      "summary": "Local timeline/manifest reconciliation; 483 matched / 5 mismatches / 86 absent index entries; five conflicts registered (C1R-01..05); control baseline retained.",
+      "verdicts": {
+        "A2_failed_push_local_evidence": "CONFIRMED",
+        "control_baseline_authoritative": "TRUE",
+        "later_local_execution_claims": "UNVERIFIED as Kaggle facts",
+        "project_level_manifest": "BLOCKED / CONTRADICTED"
+      }
+    },
+    {
+      "gate": "C-1R.1",
+      "report": "GateC1R1_report.md",
+      "summary": "Local archive recovery; 86/86 previously absent GPU-index paths recovered and hash-matched inside an existing archive; all six historical current_status.json hashes mapped to byte-exact local sources; A2 conflict preserved, not resolved.",
+      "verdicts": {
+        "A2_remote_acceptance": "UNCONFIRMED",
+        "missing_gpu_index_member_recovery": "86 RECOVERABLE_VERIFIED / 0 mismatch / 0 not found",
+        "six_historical_status_hashes": "EACH MAPPED TO LOCAL ARCHIVE SOURCE"
+      }
+    },
+    {
+      "gate": "C-2",
+      "report": "GateC2_report.md",
+      "summary": "Unauthenticated read-only remote verification attempt; one status + one view request per candidate (10 HTTP GETs, all HTTP 404 generic HTML). Access/endpoint-ambiguous, not negative proof.",
+      "verdicts": {
+        "real_FastAPI_CPU_calibration": "NOT_CONFIRMED",
+        "remote_kernel_identity": "UNRESOLVED for every candidate"
+      }
+    },
+    {
+      "gate": "C-2L",
+      "report": "GateC2L_report.md",
+      "summary": "Local cross-artifact provenance fallback over the five candidate archives; A2/A4/A6/Run5_GPU local chains consistent; A5 chain flagged CONTRADICTED on ref spelling alone; every remote fact remains UNCONFIRMED.",
+      "verdicts": {
+        "local_chain_consistent": [
+          "A2",
+          "A4",
+          "A6",
+          "Run5_GPU"
+        ],
+        "local_chain_contradicted": [
+          "A5"
+        ],
+        "remote_facts": "UNCONFIRMED for every candidate"
+      }
+    }
+  ],
+  "date": "2026-10-11",
+  "decision_request": {
+    "branch_1_handover_canonical": "User classifies the later local A2/A4/A5/A6/GPU trees as out-of-scope conflicting historical artifacts; afterward a fresh, separately frozen one-CPU authorization request may be prepared.",
+    "branch_2_later_artifact_canonical": "User supplies an updated handover that explains and approves the later artifact lineage; a separate evidence audit of that package runs first; no repeat submission.",
+    "branch_3_remain_unresolved": "Keep Gate C BLOCKED; no new authorization requested.",
+    "current_branch": "3"
+  },
+  "future_authenticated_query_plan_draft": {
+    "candidates": [
+      {
+        "alternate_spellings_observed_locally": [],
+        "candidate": "A2",
+        "primary_ref_server_returned": "thunderflash/fastapi-5077-cpu-reference-a2-20261008"
+      },
+      {
+        "alternate_spellings_observed_locally": [],
+        "candidate": "A4",
+        "primary_ref_server_returned": "thunderflash/fastapi-5077-cpu-pinned-a4-20261009"
+      },
+      {
+        "alternate_spellings_observed_locally": [
+          "thunderflash/fastapi-5077-cpu-auditoverlay-a5-20261009"
+        ],
+        "candidate": "A5",
+        "primary_ref_server_returned": "thunderflash/fastapi-5077-cpu-audit-overlay-a5-20261009"
+      },
+      {
+        "alternate_spellings_observed_locally": [],
+        "candidate": "A6",
+        "primary_ref_server_returned": "thunderflash/fastapi-5077-cpu-selfcontained-a6-20261009"
+      },
+      {
+        "alternate_spellings_observed_locally": [],
+        "candidate": "Run5_GPU",
+        "primary_ref_server_returned": "thunderflash/fastapi-5077-phase2d-pair-run5-20261009"
+      }
+    ],
+    "endpoints": [
+      "GET /api/v1/kernels/status/{owner}/{slug}",
+      "GET /api/v1/kernels/view/{owner}/{slug}"
+    ],
+    "note": "A5 must be queried with the server-returned spelling first; the requested spelling may additionally be tested but is not expected to resolve on its own.",
+    "requires": [
+      "explicit user authorization for one read-only Kaggle metadata/status session",
+      "credentials available only during that session"
+    ],
+    "status": "DRAFT_NOT_EXECUTED"
+  },
+  "method": {
+    "kaggle_api_calls": 0,
+    "network_calls": 0,
+    "operations": [
+      "targeted ZIP-member read (5 archives)",
+      "SHA-256",
+      "JSON parsing",
+      "requested-vs-server-returned ref joins",
+      "title-slug derivation",
+      "spelling census",
+      "prior-gate artifact hashing"
+    ],
+    "project_code_executed": 0,
+    "project_extraction_performed": 0,
+    "project_file_modified": 0
+  },
+  "prior_gate_artifact_hashes": {
+    "GateC1R1_audit": "0a0d40802eb94cdbe5e063e3fef43101e906e2cb2e7ea694f18b8b65f4c172d0",
+    "GateC1R1_report.md": "b5e35d3470af8981d1badca47e9d99b3837f7e62d709e700c078d41c549918d3",
+    "GateC1R_audit": "7cbfd5ef5480ed3118675edba234495b8afd1a8050abda9089d4a4cee00c0139",
+    "GateC1R_report.md": "9c916d5a6d9d30333f19404135f36abc756476d75f0666b24912d56b895f55cf",
+    "GateC1_audit": "23a447b5fddc98f3e90230d676c29696e8442c20a3287197d8decb4c1a7210c0",
+    "GateC1_report.md": "119346f0867a49939b2e04abfcfd21369dc21bc0839f376427b558906d39a01c",
+    "GateC2L_audit": "ac16cfb5863c035f0f56f9e3d22fe6b7d263520f3176493c4aee7d76bbc638e5",
+    "GateC2L_report.md": "84c35e6ac51ffcbac739de6d1d27ad8ddf61dd0fe1665f5b372b0e52a1c7af55",
+    "GateC2_audit": "f4770d90e43f7f16966b578736fb69b52679dddc937e0715c8c0ee7752715b28",
+    "GateC2_report.md": "19b569e0c8c19b5d118e6d47251e9e489ce0a7690913bbfd5035fe6974780a21"
+  },
+  "ref_integrity_summary": {
+    "divergent_documented_single_push": [
+      "A5"
+    ],
+    "divergent_ref_set": [
+      "A5"
+    ],
+    "divergent_undocumented": [],
+    "uniform_ref_set": [
+      "A2",
+      "A4",
+      "A6",
+      "Run5_GPU"
+    ]
+  },
+  "scope": "The five previously identified candidate archives only. Not another 59-ZIP inventory; not a new remote-fact attempt; no re-adjudication of prior gates.",
+  "slug_derivation_observation": {
+    "per_candidate": {
+      "A2": true,
+      "A4": true,
+      "A5": true,
+      "A6": true,
+      "Run5_GPU": true
+    },
+    "statement": "For every candidate, the server-returned push slug (from push_result.url/ref) equals the slugification of the kernel title (lowercase, non-alphanumeric runs to '-'). This is a local, deterministic observation and does not by itself establish any remote fact."
+  },
+  "stop_state_unchanged": {
+    "gate_c": "BLOCKED",
+    "new_submission_authorized": false,
+    "real_fastapi_cpu_calibration": "NOT_CONFIRMED",
+    "rich_2725_observed_gaps": [
+      "+1",
+      "+1"
+    ],
+    "rich_2725_valid_paired_runs": 2,
+    "run5_gpu": "HOLD"
+  }
+}

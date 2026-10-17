@@ -1,0 +1,6 @@
+# Evaluation budget configuration for competition inference (Candidate V3.3-TD)
+evaluation:
+  timeout_seconds: 300
+  max_tool_calls: 50
+  max_time_minutes: 15
+  max_turns: 20

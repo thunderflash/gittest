@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.2_BASELINE_httpx_3672_S44_R3",
+  "candidate": "V3.2_BASELINE",
+  "task_id": "httpx_3672",
+  "seed": 44,
+  "run_idx": 3,
+  "execution_metrics": {
+    "turns_used": 16,
+    "tool_calls": 32,
+    "test_wall_time_sec": 38.3,
+    "session_wall_time_sec": 78.5,
+    "items_collected": 37,
+    "test_exit_code": 1
+  },
+  "test_discovery": {
+    "tier": "STANDARD_FILE",
+    "command": "python -m pytest tests/test_models.py -q"
+  },
+  "diagnostics": {
+    "category": "RAW_OUTPUT",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_models.py::test_iter_bytes_unexpected_close - AssertionError: assert False",
+    "patch_applied": null,
+    "green_test_pass": false,
+    "verified_exit_code_zero": false
+  },
+  "verification_guards": {
+    "patch_non_empty": false,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": false
+  }
+}

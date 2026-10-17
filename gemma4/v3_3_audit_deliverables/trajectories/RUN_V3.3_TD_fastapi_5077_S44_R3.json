@@ -1,0 +1,35 @@
+{
+  "run_id": "RUN_V3.3_TD_fastapi_5077_S44_R3",
+  "candidate": "V3.3_TD",
+  "task_id": "fastapi_5077",
+  "seed": 44,
+  "run_idx": 3,
+  "execution_metrics": {
+    "turns_used": 10,
+    "tool_calls": 20,
+    "test_wall_time_sec": 10.8,
+    "session_wall_time_sec": 34.8,
+    "items_collected": 1,
+    "test_exit_code": 0
+  },
+  "test_discovery": {
+    "tier": "TIER_4_FALLBACK_FILE",
+    "command": "python -m pytest tests/test_dependencies.py -q"
+  },
+  "diagnostics": {
+    "category": "RAW_FAILURE",
+    "diff_type": "UNSTRUCTURED"
+  },
+  "red_to_green_audit": {
+    "red_test_failure": "FAILED tests/test_dependencies.py::test_wrapped_dependency_forward_ref - NameError: name 'Item' is not defined",
+    "patch_applied": "diff --git a/fastapi/dependencies/utils.py b/fastapi/dependencies/utils.py\n--- a/fastapi/dependencies/utils.py\n+++ b/fastapi/dependencies/utils.py\n@@ -176,6 +176,9 @@ def get_param_sub_dependant(\n     sub_dependant = get_sub_dependant(\n         depends=depends, version=version, request_param_name=param_name\n     )\n+    # Unwrap wrapped functions to resolve forward reference namespace\n+    if hasattr(sub_dependant.call, \"__wrapped__\"):\n+        sub_dependant.call = inspect.unwrap(sub_dependant.call)\n     return sub_dependant\n",
+    "green_test_pass": true,
+    "verified_exit_code_zero": true
+  },
+  "verification_guards": {
+    "patch_non_empty": true,
+    "collected_items_gt_zero": true,
+    "test_framework_files_untouched": true,
+    "early_stop_triggered": true
+  }
+}
