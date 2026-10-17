@@ -1,0 +1,188 @@
+{
+  "project_root": "/home/user/gittest/workspace_extracted/project",
+  "checks": [
+    {
+      "id": "B01",
+      "name": "bundle integrity: GateC_审计材料包.zip",
+      "result": "PASS",
+      "detail": "30/30 OK, fail=0, missing=0"
+    },
+    {
+      "id": "B02",
+      "name": "bundle integrity: Phase2D2_Requests6589_材料包.zip",
+      "result": "PASS",
+      "detail": "30/30 OK, fail=0, missing=0"
+    },
+    {
+      "id": "B03",
+      "name": "bundle integrity: M2_离线审计材料包.zip",
+      "result": "PASS",
+      "detail": "11/11 OK, fail=0, missing=0"
+    },
+    {
+      "id": "B04",
+      "name": "bundle integrity: M2_离线审计材料包_rev2.zip",
+      "result": "PASS",
+      "detail": "12/12 OK, fail=0, missing=0"
+    },
+    {
+      "id": "B05",
+      "name": "bundle integrity: M3_离线准备包.zip",
+      "result": "PASS",
+      "detail": "6/6 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T01",
+      "name": "in-tree checksum: M3/SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "6 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T02",
+      "name": "in-tree checksum: M3/USER_RUN_KIT_v1/SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "5 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T03",
+      "name": "in-tree checksum: M3/requests_line_b_offline_v1/OUTPUT_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "4 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T04",
+      "name": "in-tree checksum: M2/SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "12 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T05",
+      "name": "in-tree checksum: V1/SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "8 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T07",
+      "name": "in-tree checksum (M3-anchored): M3/CPU_CALIBRATION_REPORT_PENDING_EXTERNAL_EVIDENCE_v1_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "2 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T08",
+      "name": "in-tree checksum (M3-anchored): M3/FASTAPI_CPU_EXTERNAL_CHAIN_USER_SUPPLEMENT_v1_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "4 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T09",
+      "name": "in-tree checksum (M3-anchored): M3/FASTAPI_CPU_LOCAL_EXTERNAL_CHAIN_INVENTORY_v1_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "1 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T10",
+      "name": "in-tree checksum (M3-anchored): M3/FASTAPI_CPU_RETURNED_EVIDENCE_REVIEW_v1_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "2 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T11",
+      "name": "in-tree checksum (M3-anchored): M3/HANDOVER_TASK_INCOMPLETE_2026-10-11_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "1 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T12",
+      "name": "in-tree checksum (M3-anchored): M3/M3_CONTINUATION_GATE_CHECKPOINT_v1_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "1 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T13",
+      "name": "in-tree checksum (M3-anchored): M3/REQUESTS_LINE_B_POSTFORMAT_REVIEW_v1_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "1 OK, fail=0, missing=0"
+    },
+    {
+      "id": "T14",
+      "name": "in-tree checksum (root-anchored): M3/requests_line_b_offline_v1/INPUT_SHA256SUMS.txt",
+      "result": "PASS",
+      "detail": "8 OK, fail=0, missing=0"
+    },
+    {
+      "id": "H01",
+      "name": "handover §4 key-deliverable hash table (12 entries)",
+      "result": "PASS",
+      "detail": "12/12 match"
+    },
+    {
+      "id": "R01",
+      "name": "C-3 closeout reproducibility (re-run + hash + stdout)",
+      "result": "PASS",
+      "detail": "exit=0; rerun_sha256=d3b35a9130647268bfce461bbc40e6070e787a5604d5277b68b827afe46cf459; bundled_sha256=d3b35a9130647268bfce461bbc40e6070e787a5604d5277b68b827afe46cf459; stdout_match=True"
+    },
+    {
+      "id": "R02",
+      "name": "authorization interlock (no auth phrase -> exit 3, zero requests)",
+      "result": "PASS",
+      "detail": "exit=3; stdout_bytes=0; stderr='INTERLOCK: explicit read-only authorization phrase not found; zero requests performed.'"
+    },
+    {
+      "id": "A01",
+      "name": "A5 archive hash + 5-member spot check + dual-slug semantics",
+      "result": "PASS",
+      "detail": "archive_hash_ok=True; members_5/5=OK; requested_slip=auditoverlay, server_slip=audit-overlay, review_documents_both=True"
+    },
+    {
+      "id": "C01",
+      "name": "conflict register C1R-01..05 present",
+      "result": "PASS",
+      "detail": "entries=['C1R-01', 'C1R-02', 'C1R-03', 'C1R-04', 'C1R-05']"
+    },
+    {
+      "id": "C02",
+      "name": "conclusion boundary: every candidate remote_fact=UNCONFIRMED",
+      "result": "PASS",
+      "detail": "A2=UNCONFIRMED; A4=UNCONFIRMED; A5=UNCONFIRMED; A6=UNCONFIRMED; Run5_GPU=UNCONFIRMED"
+    },
+    {
+      "id": "E01",
+      "name": "returned evidence package (CRC, duplicates, unpacked-tree hash closure)",
+      "result": "PASS",
+      "detail": "crc=PASS; members=58; duplicates=0; unpacked_tree_hash_closure=ALL_MATCH"
+    },
+    {
+      "id": "E02",
+      "name": "uploads/fastapi_cpu_evidence.json byte-identical to M3 return package",
+      "result": "PASS",
+      "detail": "sha256=e57692a12aae40f0e1951beb5041ed3bd55f91d9404fcbd166423d4ce176a4c0"
+    },
+    {
+      "id": "F01",
+      "name": "gemma4_project/gate1_official.ipynb integrity vs recorded hash",
+      "result": "FINDING",
+      "detail": "recorded=3f24600fa59e5705116e66a2d0046ffa9ca7c91cd70d9e58c7fd16e04c1ce037; actual=8a012409a274a8683ab3ab8f4ecda243f908a0d3b12b5205543ff03deb9612ad; bundle_copy_matches_recorded=True; local_cells=4 vs bundle_cells=2 (local copy is the 'L4 ENV_CHECK v2' diagnostic notebook, not the Phase 2B Gate-1 notebook)"
+    },
+    {
+      "id": "F02",
+      "name": "expert_review_bundle inventory (snapshot completeness)",
+      "result": "FINDING",
+      "detail": "present_ok=3; missing_from_snapshot=38 (evidence/* and source/remote_verify/* not included in this delivery; inventory gap, not hash drift)"
+    }
+  ],
+  "summary": {
+    "total": 28,
+    "pass": 26,
+    "fail": 0,
+    "findings": 2,
+    "frozen_states_unchanged": {
+      "real_fastapi_cpu_calibration": "NOT_CONFIRMED",
+      "gate_c": "BLOCKED",
+      "run5_gpu": "HOLD",
+      "new_submission_authorized": false,
+      "m3_to_m4_transition": "NOT_ELIGIBLE",
+      "rich_2725": "2 valid paired runs, gaps [+1, +1]"
+    },
+    "boundary": "offline read-only audit; zero network; zero Kaggle API; zero auth; zero submission/retry/rename; zero GPU; zero model/agent runs; no historical evidence modified"
+  }
+}

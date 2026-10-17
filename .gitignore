@@ -1,1 +1,4 @@
 cot_train.jsonl
+# Large downloaded/extracted audit materials (kept out of Git by design)
+google_drive/
+workspace_extracted/
