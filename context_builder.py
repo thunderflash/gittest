@@ -21,6 +21,7 @@ import datetime
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -297,6 +298,37 @@ def build_repo_file_index(repo_dir: Path) -> dict[str, dict]:
     return index
 
 
+def verify_repo_commit(repo_dir: Path, base_commit: str) -> tuple[bool, str | None]:
+    """验证 repo 当前 HEAD 是否等于 base_commit。
+
+    返回 (是否匹配, 当前 HEAD 或错误信息)。
+    """
+    if not repo_dir.exists() or not (repo_dir / ".git").exists():
+        return False, "repo_dir not a git repository"
+    try:
+        head = subprocess.check_output(
+            ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        if head == base_commit:
+            return True, head
+        # 尝试 checkout base_commit
+        try:
+            subprocess.check_call(
+                ["git", "-C", str(repo_dir), "checkout", base_commit],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            head = subprocess.check_output(
+                ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+            return (head == base_commit), head
+        except Exception:
+            return False, head
+    except Exception as e:
+        return False, f"git rev-parse failed: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Context 构建主函数
 # ---------------------------------------------------------------------------
@@ -305,9 +337,9 @@ def build_context(
     instance_id: str,
     issue: str,
     repo_dir: Path,
+    base_commit: str = "",
     src_files: list[str] | None = None,
     test_files: list[str] | None = None,
-    test_diff: str = "",
     max_tokens: int = 12000,
     include_repo_tree: bool = True,
 ) -> dict[str, Any]:
@@ -320,7 +352,7 @@ def build_context(
         "instance_id": instance_id,
         "repo_dir": posix_path(repo_dir),
         "issue": issue,
-        "test_diff": test_diff,
+        "base_commit": base_commit,
         "issue_symbols": [],
         "file_tree": [],
         "relevant_files": [],
@@ -332,19 +364,23 @@ def build_context(
         "context_used_tokens": 0,
         "context_hash": "",
         "leak_check": {
-            "uses_base_commit_only": True,
+            "uses_base_commit_only": False,
             "gold_patch_excluded": True,
             "merge_sha_excluded": True,
+            "commit_verified": False,
         },
     }
 
     budget = ContextBudget(max_tokens=max_tokens)
 
-    # 1. 从 Issue 和 test_diff 提取候选符号
+    # P0-2: 实际验证 repo 处于 base_commit，不再�编码 True
+    commit_verified, commit_info = verify_repo_commit(repo_dir, base_commit)
+    context["leak_check"]["uses_base_commit_only"] = commit_verified
+    context["leak_check"]["commit_verified"] = commit_verified
+    context["leak_check"]["head"] = commit_info
+
+    # 1. 从 Issue 提取候选符号（不使用 test_diff，防止测试答案泄漏）
     issue_symbols = extract_symbols_from_text(issue)
-    if test_diff:
-        issue_symbols.extend(extract_symbols_from_text(test_diff))
-        issue_symbols.extend(extract_imports_from_test_diff(test_diff))
     # 去重保序
     seen = set()
     uniq_symbols = []
@@ -452,11 +488,10 @@ def build_context(
 
     context["context_used_tokens"] = budget.used
 
-    # 7. 计算 Context Hash（基于 issue + 所有上下文内容）
+    # 7. 计算 Context Hash（基于 issue + 所有上下文内容，不包含 test_diff 防止泄漏）
     hash_input = json.dumps({
         "instance_id": instance_id,
         "issue": issue,
-        "test_diff": test_diff,
         "file_tree": context["file_tree"],
         "relevant_files": context["relevant_files"],
         "file_contents": context["file_contents"],
@@ -560,9 +595,9 @@ def build_contexts_for_tasks(
                 instance_id=tid,
                 issue=issue,
                 repo_dir=repo_dir,
+                base_commit=base_commit,
                 src_files=src_files,
                 test_files=test_files,
-                test_diff=test_diff,
                 max_tokens=max_tokens,
             )
         else:
@@ -570,9 +605,9 @@ def build_contexts_for_tasks(
                 instance_id=tid,
                 issue=issue,
                 repo_dir=repo_dir,
+                base_commit=base_commit,
                 src_files=src_files,
                 test_files=test_files,
-                test_diff=test_diff,
                 max_tokens=max_tokens,
             )
 

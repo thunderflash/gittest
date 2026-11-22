@@ -133,30 +133,27 @@ def build_record(tid: str, task: dict) -> dict | None:
 
     patch_text = _format_edits_as_patch(edits)
 
-    # Build user content: Issue + repo context + relevant files
-    # reconstructed.json may not have problem_statement; use test_diff + src context as proxy
+    # Build user content: Issue + base_commit + repo context only
+    # P0-7: 不泄漏 test_diff、merge_sha、或从 gold patch 推导的 src_files 到 prompt
     src_files = task.get("src_files", [])
     test_files = task.get("test_files", [])
+    problem = task.get("problem_statement", "") or ""
 
     user_lines = []
-    user_lines.append(f"Issue: Fix the bug described in the test changes for task {tid}.")
+    if problem.strip():
+        user_lines.append(f"Issue: {problem}")
+    else:
+        # 兜底：不使用 test_diff 构造 issue，直接说明任务
+        user_lines.append(f"Fix the bug in task {tid}.")
     user_lines.append("")
     user_lines.append("Repository Context:")
     user_lines.append(f"  Base commit: {task.get('base_commit', 'unknown')}")
-    user_lines.append(f"  Merge commit: {task.get('merge_sha', 'unknown')}")
     user_lines.append("")
-    user_lines.append("Relevant Source Files:")
-    for sf in src_files:
-        user_lines.append(f"  - {sf}")
+    user_lines.append(
+        "Task: Generate file edits (FILE/OLD_STRING/NEW_STRING/END blocks) that fix the bug. "
+        "Use only the issue description and repository context at base_commit."
+    )
     user_lines.append("")
-    user_lines.append("Relevant Test Files:")
-    for tf in test_files:
-        user_lines.append(f"  - {tf}")
-    user_lines.append("")
-    user_lines.append("Test Changes (what the fix must make pass):")
-    user_lines.append(test_diff[:3000])
-    user_lines.append("")
-    user_lines.append("Generate the file edits that fix this bug.")
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -169,7 +166,6 @@ def build_record(tid: str, task: dict) -> dict | None:
         "messages": messages,
         "metadata": {
             "base_commit": task.get("base_commit"),
-            "merge_sha": task.get("merge_sha"),
             "gold_diff": gold_diff,
             "test_diff": test_diff,
             "src_files": src_files,

@@ -23,7 +23,10 @@ Gate 6 — Relevance: 修改的文件与 src_files / test_files 相关
 
 import json
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -121,33 +124,45 @@ def apply_edit_to_text(text: str, old_string: str, new_string: str) -> tuple[boo
 def apply_patch_to_repo(
     repo_dir: Path,
     edits: list[dict[str, str]],
-) -> tuple[bool, str, list[dict[str, Any]]]:
-    """将 patch 应用到 repo 副本（仅内存中，不修改磁盘）。
+) -> tuple[bool, str, list[dict[str, Any]], Path | None]:
+    """将 patch 应用到 repo 的临时工作副本。
 
-    返回 (全部成功, 消息, 逐文件详情)。
+    将修改后的文件写入临时目录，便于后续对修改后代码做语法检查。
+
+    返回 (全部成功, 消息, 逐文件详情, 临时工作目录或 None)。
     """
     file_details: list[dict[str, Any]] = []
+    work_dir = Path(tempfile.mkdtemp(prefix="patch_validate_"))
+
+    # 先复制整个 repo 到工作目录
+    try:
+        shutil.copytree(repo_dir, work_dir, dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+    except Exception as e:
+        return False, f"copy repo failed: {e}", file_details, None
 
     for edit in edits:
         filepath = edit["filepath"]
         old_s = edit["old_string"]
         new_s = edit["new_string"]
-        p = repo_dir / filepath
+        p = work_dir / filepath
 
         detail = {
             "filepath": filepath,
             "exists": p.exists(),
             "applied": False,
             "error": None,
+            "modified_path": None,
+            "modified_content": None,
         }
 
         if not p.exists():
             # 尝试模糊查找同名文件
-            matches = list(repo_dir.rglob(Path(filepath).name))
+            matches = list(work_dir.rglob(Path(filepath).name))
             matches = [m for m in matches if m.is_file()]
             if len(matches) == 1:
                 p = matches[0]
-                detail["filepath"] = str(p.relative_to(repo_dir))
+                detail["filepath"] = str(p.relative_to(work_dir))
                 detail["exists"] = True
             elif len(matches) > 1:
                 detail["error"] = f"ambiguous path: {filepath}"
@@ -168,13 +183,21 @@ def apply_patch_to_repo(
         ok, result = apply_edit_to_text(text, old_s, new_s)
         if ok:
             detail["applied"] = True
+            detail["modified_path"] = str(p)
+            detail["modified_content"] = result
+            # 写入修改后的内容到工作目录
+            try:
+                p.write_text(result, encoding="utf-8")
+            except Exception as e:
+                detail["error"] = f"write error: {e}"
+                detail["applied"] = False
         else:
             detail["error"] = result
 
         file_details.append(detail)
 
     all_ok = all(d["applied"] for d in file_details if d["exists"])
-    return all_ok, "applied" if all_ok else "partial_failure", file_details
+    return all_ok, "applied" if all_ok else "partial_failure", file_details, work_dir
 
 
 # ---------------------------------------------------------------------------
@@ -234,8 +257,8 @@ def validate_patch(
         result["fail_reasons"].append("parse_failed")
         return result
 
-    # Gate 2 & 3 — File Existence + Apply
-    apply_ok, apply_msg, file_details = apply_patch_to_repo(repo_dir, edits)
+    # Gate 2 & 3 — File Existence + Apply (写入临时工作副本)
+    apply_ok, apply_msg, file_details, work_dir = apply_patch_to_repo(repo_dir, edits)
     result["file_details"] = file_details
 
     files_exist = all(d["exists"] for d in file_details)
@@ -261,15 +284,26 @@ def validate_patch(
     if not non_empty:
         result["fail_reasons"].append("empty_edits")
 
-    # Gate 5 — Syntax (对修改后的文件进行语法检查，需实际写入临时副本)
-    # 这里简化：仅对原始文件做语法检查，修改后的语法检查留给 Gate 6 的实际测试
+    # Gate 5 — Syntax on MODIFIED files (from temp work dir, not originals)
     syntax_results = {}
-    for detail in file_details:
-        if detail["exists"] and detail["applied"]:
-            p = repo_dir / detail["filepath"]
-            ok, err = check_python_syntax(p)
-            syntax_results[detail["filepath"]] = {"passed": ok, "error": err}
-    result["gates"]["syntax_original"] = syntax_results
+    syntax_passed = True
+    if work_dir is not None:
+        for detail in file_details:
+            if detail["exists"] and detail["applied"] and detail["modified_path"]:
+                p = Path(detail["modified_path"])
+                ok, err = check_python_syntax(p)
+                syntax_results[detail["filepath"]] = {"passed": ok, "error": err}
+                if not ok:
+                    syntax_passed = False
+        # 清理临时目录
+        try:
+            shutil.rmtree(work_dir, ignore_errors=True)
+        except Exception:
+            pass
+    result["gates"]["syntax_modified"] = {
+        "passed": syntax_passed,
+        "results": syntax_results,
+    }
 
     # Gate 6 — Relevance
     modified_files = [d["filepath"] for d in file_details if detail_applied(d)]
@@ -280,9 +314,10 @@ def validate_patch(
         "src_files": src_files,
     }
 
-    # 综合判定
+    # 综合判定：关键 gate 包含 parse、file_existence、apply、non_empty、syntax、relevance
     critical_passed = (
         parse_ok and files_exist and files_applied and non_empty
+        and syntax_passed and relevant
     )
     result["verified"] = critical_passed
 
@@ -292,6 +327,7 @@ def validate_patch(
         "file_existence": 1.0 if files_exist else 0.0,
         "apply": 1.0 if files_applied else 0.0,
         "non_empty": 1.0 if non_empty else 0.0,
+        "syntax_modified": 1.0 if syntax_passed else 0.0,
         "relevance": 1.0 if relevant else 0.0,
     }
     result["confidence"] = round(sum(gate_scores.values()) / len(gate_scores), 2)

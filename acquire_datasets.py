@@ -23,9 +23,11 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 try:
     from datasets import load_dataset
@@ -35,8 +37,9 @@ except Exception as e:  # pragma: no cover - 依赖缺失时给出清晰错误
     sys.exit(3)
 
 # 默认数据集映射（HF dataset_id, 是否已知可用）
+# P0-8 fix: confirmed source is internlm/SWE-Fixer-Train-110K, not princeton-nlp/
 DEFAULT_DATASETS = {
-    "swe_fixer": "princeton-nlp/SWE-Fixer-Train-110K",
+    "swe_fixer": "internlm/SWE-Fixer-Train-110K",
     "swe_smith_py": "swe-smith/SWE-smith-py",
 }
 
@@ -74,8 +77,15 @@ def normalize_record(src: str, ds_id: str, idx: int, rec: dict) -> dict | None:
     repo = first("repo", "repository", "project")
     base_commit = first("base_commit", "base_commit_sha", "commit", "parent_commit")
 
-    # 最小可用性检查：必须有 instance_id 和 问题描述
+    # 最小可用性检查：必须有 instance_id、问题描述、base_commit
     if not instance_id or not problem:
+        return None
+    if not base_commit:
+        return None
+
+    # patch 必须是非空的 diff（包含 @@ hunk 标记），否则无法构建训练标签
+    patch_str = str(patch) if patch is not None else ""
+    if not patch_str.strip() or "@@" not in patch_str:
         return None
 
     normalized = {
@@ -84,10 +94,10 @@ def normalize_record(src: str, ds_id: str, idx: int, rec: dict) -> dict | None:
         "idx": idx,
         "instance_id": str(instance_id),
         "problem_statement": str(problem),
-        "patch": str(patch) if patch is not None else "",
+        "patch": patch_str,
         "test_patch": str(test_patch) if test_patch is not None else "",
         "repo": str(repo) if repo else "",
-        "base_commit": str(base_commit) if base_commit else "",
+        "base_commit": str(base_commit),
         "fail_to_pass": fail_to_pass if isinstance(fail_to_pass, (list, str)) else [],
         "pass_to_pass": pass_to_pass if isinstance(pass_to_pass, (list, str)) else [],
         "_raw": rec,
@@ -96,12 +106,95 @@ def normalize_record(src: str, ds_id: str, idx: int, rec: dict) -> dict | None:
     # provenance 字段（标签来源追踪的前置）
     normalized["_provenance"] = {
         "label_source": "dataset",        # 目前来自数据集，后续可升级为 human/model
-        "label_strength": "strong" if patch else "weak",
+        "label_strength": "strong",       # 数据集自带 patch，视为 strong
         "verified": False,                # 尚未经过自动/人工验证，需后续 Gate
-        "confidence": 1.0 if patch else 0.0,
+        "confidence": 1.0,
+        "schema_version": "1.0",
     }
 
     return normalized
+
+
+def first_in_raw(rec: dict, *keys: str) -> str | None:
+    """从原始记录中按优先级取第一个非空字段值。"""
+    for k in keys:
+        if k in rec and rec[k] is not None:
+            return rec[k]
+    return None
+
+
+def build_repo_snapshot(repo: str, base_commit: str, snapshot_dir: Path) -> dict[str, Any]:
+    """Clone repo at base_commit into snapshot_dir.
+
+    Returns dict with status, repo_dir, commit_verified, error.
+    """
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    repo_dir = snapshot_dir / repo.replace("/", "__")
+
+    if repo_dir.exists() and (repo_dir / ".git").exists():
+        # Repo already cloned — verify commit
+        try:
+            head = subprocess.check_output(
+                ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+            commit_verified = (head == base_commit)
+            if not commit_verified:
+                # Try checkout base_commit
+                try:
+                    subprocess.check_call(
+                        ["git", "-C", str(repo_dir), "checkout", base_commit],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    head = subprocess.check_output(
+                        ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+                        stderr=subprocess.DEVNULL, text=True,
+                    ).strip()
+                    commit_verified = (head == base_commit)
+                except Exception:
+                    commit_verified = False
+            return {
+                "status": "exists",
+                "repo_dir": str(repo_dir),
+                "commit_verified": commit_verified,
+                "head": head,
+                "base_commit": base_commit,
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "repo_dir": str(repo_dir),
+                "commit_verified": False,
+                "error": f"git verify failed: {e}",
+                "base_commit": base_commit,
+            }
+
+    # Clone shallow at base_commit
+    repo_url = f"https://github.com/{repo}.git"
+    try:
+        subprocess.check_call(
+            ["git", "clone", "--depth", "1", "--branch", base_commit, repo_url, str(repo_dir)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        head = subprocess.check_output(
+            ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        return {
+            "status": "cloned",
+            "repo_dir": str(repo_dir),
+            "commit_verified": (head == base_commit),
+            "head": head,
+            "base_commit": base_commit,
+        }
+    except Exception as e:
+        return {
+            "status": "failed",
+            "repo_dir": str(repo_dir),
+            "commit_verified": False,
+            "error": f"clone failed: {e}",
+            "base_commit": base_commit,
+        }
 
 
 def basic_integrity_check(records: list[dict]) -> dict:
@@ -173,6 +266,24 @@ def acquire_source(source: str, ds_id: str, max_rows: int | None, out_dir: Path,
     limit = total_available if max_rows is None else min(max_rows, total_available)
     print(f"[ACQUIRE] {source}: total_available={total_available}, limit={limit}")
 
+    # P0-8: Build repo snapshots for unique repo/base_commit pairs
+    snapshot_dir = out_dir.parent / "snapshots"
+    snapshots: dict[str, dict] = {}
+    seen_snapshots: set[str] = set()
+    for i in range(limit):
+        rec = ds[i]
+        repo = first_in_raw(rec, "repo", "repository", "project")
+        base_commit = first_in_raw(rec, "base_commit", "base_commit_sha", "commit", "parent_commit")
+        if repo and base_commit:
+            key = f"{repo}@{base_commit[:12]}"
+            if key not in seen_snapshots:
+                seen_snapshots.add(key)
+                snap = build_repo_snapshot(str(repo), str(base_commit), snapshot_dir)
+                snapshots[key] = snap
+                status = snap["status"]
+                verified = snap["commit_verified"]
+                print(f"[SNAPSHOT] {key}: status={status} commit_verified={verified}")
+
     written = 0
     with open(jsonl_path, "w", encoding="utf-8") as f:
         for i in range(limit):
@@ -209,6 +320,8 @@ def acquire_source(source: str, ds_id: str, max_rows: int | None, out_dir: Path,
         "output_file": str(jsonl_path),
         "sha256": result["sha256"],
         "integrity": result["integrity"],
+        "snapshots": snapshots,
+        "snapshot_dir": str(snapshot_dir),
         "note": "Raw export from HF. Label provenance to be enriched in later stages.",
     }
     prov_path.write_text(json.dumps(provenance, ensure_ascii=False, indent=2), encoding="utf-8")

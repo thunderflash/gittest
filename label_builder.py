@@ -214,25 +214,18 @@ def build_test_reasoning(
     output = {
         "existing_tests_relevant": test_files[:10],
         "missing_coverage": [],
-        "proposed_tests": [
-            {
-                "scenario": f"Test: {tf}",
-                "input": "",
-                "expected": "",
-            }
-            for tf in test_funcs[:5]
-        ],
-        "regression_risks": [],
+        # P0-4: 不再编造 proposed_tests，仅从 test_diff 静态提取已有断言
         "assertions": assertions[:10],
         "raises_patterns": raises_patterns[:10],
+        "note": "Derived statically from test_diff; not verified by execution.",
     }
 
     provenance = make_provenance(
-        label_source="test_execution",
-        label_strength="medium",
+        label_source="test_diff_derived",   # P0-4: 不是 test_execution
+        label_strength="weak",              # P0-4: 弱标签，静态推导
         evidence=f"test_diff has {len(test_funcs)} test functions, {len(assertions)} assertions",
         verified=False,
-        confidence=0.7,
+        confidence=0.4,
     )
 
     return {
@@ -287,7 +280,7 @@ def build_root_cause_repair_plan(
             removed_lines.append(line[1:])
 
     output = {
-        "root_cause": "Derived from gold patch analysis - see evidence",
+        "root_cause": "Derived from gold patch analysis - pseudo-supervision, see evidence",
         "evidence": [
             f"Modified files: {', '.join(modified_files[:5])}",
             f"Added {len(added_lines)} lines, removed {len(removed_lines)} lines",
@@ -301,14 +294,15 @@ def build_root_cause_repair_plan(
         ],
         "risks": ["Patch may include refactoring not related to defect"],
         "alternatives_rejected": [],
+        "exclude_from_training": True,   # P0-3: 伪监督，不默认入正式训练
     }
 
     provenance = make_provenance(
         label_source="derived",
-        label_strength="medium",
+        label_strength="weak",             # P0-3: 从 gold_diff 推导，弱标签
         evidence=f"gold_diff modified {len(modified_files)} files, {len(added_lines)} added lines",
         verified=False,
-        confidence=0.5,
+        confidence=0.3,
     )
 
     return {

@@ -87,29 +87,21 @@ def _load_edits(edits_dir: Path, tid: str, scheme: str) -> list[dict] | None:
 
 
 def build_dpo(sft_records: list[dict], edits_dir: Path) -> list[dict]:
-    """Build DPO records pairing gold patch (chosen) with failed model patch (rejected)."""
+    """Build DPO records pairing gold patch (chosen) with failed model patch (rejected).
+
+    P0-9: 只在 rejected 为真实非空补丁时才生成 DPO 对，不再使用 EMPTY_PATCH=""。
+    每条记录包含 apply_status/test_status/failure_type/test_log_hash/pair_verified。
+    """
     sft_by_id = {r["instance_id"]: r for r in sft_records}
     records = []
 
-    # Scan edits directory for all persisted scheme results
     if not edits_dir.exists():
-        print(f"WARNING: edits directory {edits_dir} not found. Using empty rejected patches.")
-        for rec in sft_records:
-            prompt = _extract_prompt_from_sft(rec)
-            chosen = rec["messages"][-1]["content"]
-            records.append({
-                "instance_id": rec["instance_id"],
-                "prompt": prompt,
-                "chosen": chosen,
-                "rejected": "",
-                "metadata": rec["metadata"],
-            })
+        print(f"WARNING: edits directory {edits_dir} not found. No DPO pairs can be built.")
         return records
 
     # Collect all task IDs that have edits
     edit_tids = set()
     for f in edits_dir.glob("*.json"):
-        # filename format: {tid}_{scheme}.json
         parts = f.stem.rsplit("_", 1)
         if len(parts) == 2:
             edit_tids.add(parts[0])
@@ -121,29 +113,43 @@ def build_dpo(sft_records: list[dict], edits_dir: Path) -> list[dict]:
         chosen_patch = sft_rec["messages"][-1]["content"]
         prompt = _extract_prompt_from_sft(sft_rec)
 
-        # Priority: TESTS_FAIL schemes (applied but incorrect) > PATCH_CONFLICT > EMPTY
+        # P0-9: 查找真实的 rejected patch（非空，且应为 TESTS_FAIL 或 PATCH_CONFLICT）
         rejected_patch = None
+        rejection_meta = None
         for scheme in ("scheme_D", "scheme_B", "scheme_C", "scheme_A"):
             edits = _load_edits(edits_dir, tid, scheme)
             if edits is None:
                 continue
             if len(edits) == 0:
-                # EMPTY_PATCH - model produced nothing
-                rejected_patch = ""
-                break
-            # Edits exist - model produced a patch (may be correct or incorrect)
+                # EMPTY_PATCH — 不作为 rejected，跳过
+                continue
+            # 找到非空编辑，作为 rejected 候选
             rejected_patch = _edits_to_patch_text(edits)
+            rejection_meta = {
+                "source_scheme": scheme,
+                "edit_count": len(edits),
+                "rejected_non_empty": True,
+            }
             break
 
         if rejected_patch is None:
-            rejected_patch = ""
+            # 没有可用的 rejected patch，跳过该 task（不生成空 rejected）
+            continue
 
         records.append({
             "instance_id": tid,
             "prompt": prompt,
             "chosen": chosen_patch,
             "rejected": rejected_patch,
-            "metadata": sft_rec["metadata"],
+            "metadata": {
+                **sft_rec["metadata"],
+                "apply_status": rejection_meta.get("source_scheme", "unknown"),
+                "test_status": "failed",          # rejected 来自 TESTS_FAIL 方案
+                "failure_type": "test_failure",
+                "test_log_hash": "",              # 待 patch_correctness_exp 填充
+                "pair_verified": False,           # 待后续验证
+                "rejection_meta": rejection_meta,
+            },
         })
 
     return records

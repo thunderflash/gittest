@@ -27,7 +27,9 @@ Gate 5 — Training Eligibility: 只有满足任务特定质量要求的样本�
   <output_dir>/gates/eligible_samples.jsonl                通过所有 Gate 的样本列表
 """
 
+import hashlib
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,11 +111,10 @@ def gate_0_source_integrity(instance_id: str, task: dict) -> GateResult:
 # Gate 1 — Repo Reconstruction
 # ---------------------------------------------------------------------------
 
-def gate_1_repo_reconstruction(instance_id: str, repo_dir: Path) -> GateResult:
+def gate_1_repo_reconstruction(instance_id: str, repo_dir: Path, base_commit: str = "") -> GateResult:
     """检查 Repo Snapshot 能否从 base_commit 重建，无泄漏。
 
-    宽松模式：只要 repo 目录存在且包含 Python 文件即可通过。
-    .fixture_ready 标记缺失不视为失败（可能是手动构建的测试 repo）。
+    严格模式：要求 repo 目录存在、包含 Python 文件、且 HEAD == base_commit。
     """
     if not repo_dir.exists():
         return GateResult("gate_1_repo_reconstruction", instance_id, False,
@@ -127,6 +128,28 @@ def gate_1_repo_reconstruction(instance_id: str, repo_dir: Path) -> GateResult:
         return GateResult("gate_1_repo_reconstruction", instance_id, False,
                           "no Python files found in repo",
                           evidence={"repo_dir": str(repo_dir)})
+
+    # 验证 HEAD == base_commit
+    commit_verified = False
+    head_commit = None
+    if base_commit and (repo_dir / ".git").exists():
+        try:
+            head_commit = subprocess.check_output(
+                ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+                stderr=subprocess.DEVNULL, text=True,
+            ).strip()
+            commit_verified = (head_commit == base_commit)
+        except Exception:
+            commit_verified = False
+
+    if base_commit and not commit_verified:
+        return GateResult("gate_1_repo_reconstruction", instance_id, False,
+                          f"HEAD ({head_commit}) != base_commit ({base_commit[:12] if base_commit else 'N/A'})",
+                          evidence={"repo_dir": str(repo_dir),
+                                    "python_file_count": len(py_files),
+                                    "head_commit": head_commit,
+                                    "base_commit": base_commit[:12] if base_commit else "",
+                                    "commit_verified": False})
 
     # .fixture_ready 标记可选，仅记录
     marker = repo_dir / ".fixture_ready"
@@ -142,7 +165,10 @@ def gate_1_repo_reconstruction(instance_id: str, repo_dir: Path) -> GateResult:
                       evidence={"repo_dir": str(repo_dir),
                                 "python_file_count": len(py_files),
                                 "fixture_marker": marker_present,
-                                "fixture_commit": marker_content})
+                                "fixture_commit": marker_content,
+                                "head_commit": head_commit,
+                                "base_commit": base_commit[:12] if base_commit else "",
+                                "commit_verified": commit_verified})
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +199,7 @@ def gate_2_patch_validation(validation_result: dict) -> GateResult:
 # ---------------------------------------------------------------------------
 
 def gate_3_label_quality(instance_id: str, labels_result: dict | None) -> GateResult:
-    """检查标签质量： provenance 完整、强标签占比、证据支持。
+    """检查标签质量： provenance 完整、强标签占比、证据支持、per-task verified。
 
     labels_result 可以是 provenance.json 的内容，结构为：
     {
@@ -214,6 +240,22 @@ def gate_3_label_quality(instance_id: str, labels_result: dict | None) -> GateRe
                                     "missing_source": missing_source,
                                     "missing_strength": missing_strength})
 
+    # P0-6: per-task evidence/verified 检查 — 每个强标签必须有 evidence 且 verified=True
+    unverified_strong = []
+    for t in task_types:
+        if label_strengths.get(t) == "strong":
+            # provenance 中的每个 task 都应有 verified 字段
+            # 这里检查 label_sources 是否为 gold_patch（强标签的可信来源）
+            if label_sources.get(t) not in ("gold_patch", "test_execution"):
+                unverified_strong.append(t)
+
+    if unverified_strong:
+        return GateResult("gate_3_label_quality", instance_id, False,
+                          f"strong labels lack verified source: {unverified_strong}",
+                          evidence={"unverified_strong": unverified_strong,
+                                    "strong": strong_count, "medium": medium_count,
+                                    "weak": weak_count, "total": total})
+
     # 质量阈值：至少有一个 strong 标签（patch_generation 是 strong）
     if strong_count == 0:
         return GateResult("gate_3_label_quality", instance_id, False,
@@ -232,8 +274,13 @@ def gate_3_label_quality(instance_id: str, labels_result: dict | None) -> GateRe
 
 def gate_4_split_integrity(instance_id: str, all_instance_ids: list[str],
                            train_ids: set[str], val_ids: set[str],
-                           holdout_ids: set[str]) -> GateResult:
-    """检查分割完整性：同一 Issue 的衍生任务不跨 Split。"""
+                           holdout_ids: set[str],
+                           repo_map: dict[str, str] | None = None) -> GateResult:
+    """检查分割完整性：同一 Issue 的衍生任务不跨 Split。
+
+    repo_map: instance_id -> repo 名称映射，用于可靠的 repo 级分割检查，
+              而非从 instance_id 字符串推断。
+    """
     # 检查 instance_id 只出现在一个 split 中
     splits = []
     if instance_id in train_ids:
@@ -253,14 +300,14 @@ def gate_4_split_integrity(instance_id: str, all_instance_ids: list[str],
                           "instance not in any split",
                           evidence={"splits": splits})
 
-    # 检查同 repo 的不同 instance 是否跨 split（按 instance_id 前缀推断 repo）
-    repo_prefix = instance_id.rsplit("_", 1)[0] if "_" in instance_id else instance_id
+    # 检查同 repo 的不同 instance 是否跨 split
+    instance_repo = repo_map.get(instance_id, instance_id) if repo_map else instance_id
     repo_cross_split = False
     for other_id in all_instance_ids:
         if other_id == instance_id:
             continue
-        other_prefix = other_id.rsplit("_", 1)[0] if "_" in other_id else other_id
-        if other_prefix == repo_prefix:
+        other_repo = repo_map.get(other_id, other_id) if repo_map else other_id
+        if other_repo == instance_repo:
             other_splits = []
             if other_id in train_ids:
                 other_splits.append("train")
@@ -275,10 +322,10 @@ def gate_4_split_integrity(instance_id: str, all_instance_ids: list[str],
     if repo_cross_split:
         return GateResult("gate_4_split_integrity", instance_id, False,
                           "repo cross-split contamination detected",
-                          evidence={"repo_prefix": repo_prefix, "splits": splits})
+                          evidence={"repo": instance_repo, "splits": splits})
 
     return GateResult("gate_4_split_integrity", instance_id, True, None,
-                      evidence={"split": splits[0], "repo_prefix": repo_prefix})
+                      evidence={"split": splits[0], "repo": instance_repo})
 
 
 # ---------------------------------------------------------------------------
@@ -332,10 +379,12 @@ def run_gates_for_issue(
     validation_result: dict | None,
     labels_result: dict | None,
     repo_dir: Path,
+    base_commit: str,
     all_instance_ids: list[str],
     train_ids: set[str],
     val_ids: set[str],
     holdout_ids: set[str],
+    repo_map: dict[str, str] | None,
     output_dir: Path,
 ) -> dict[str, Any]:
     """对单个 Issue 运行所有 Gate，返回结果。"""
@@ -345,8 +394,8 @@ def run_gates_for_issue(
     g0 = gate_0_source_integrity(instance_id, task)
     gate_results.append(g0.to_dict())
 
-    # Gate 1
-    g1 = gate_1_repo_reconstruction(instance_id, repo_dir)
+    # Gate 1 — 传入 base_commit 做 HEAD 验证
+    g1 = gate_1_repo_reconstruction(instance_id, repo_dir, base_commit)
     gate_results.append(g1.to_dict())
 
     # Gate 2
@@ -357,7 +406,7 @@ def run_gates_for_issue(
                         "no validation result", evidence={"reason": "missing"})
     gate_results.append(g2.to_dict())
 
-    # Gate 3
+    # Gate 3 — per-task evidence/verified
     if labels_result:
         g3 = gate_3_label_quality(instance_id, labels_result)
     else:
@@ -365,12 +414,12 @@ def run_gates_for_issue(
                         "no labels result", evidence={"reason": "missing"})
     gate_results.append(g3.to_dict())
 
-    # Gate 4
+    # Gate 4 — 传入 repo_map 做可靠的 repo 级分割检查
     g4 = gate_4_split_integrity(instance_id, all_instance_ids,
-                                train_ids, val_ids, holdout_ids)
+                                train_ids, val_ids, holdout_ids, repo_map)
     gate_results.append(g4.to_dict())
 
-    # Gate 5
+    # Gate 5 — per-task eligibility
     if validation_result and labels_result:
         g5 = gate_5_training_eligibility(validation_result, labels_result)
     else:
@@ -408,21 +457,36 @@ def run_gates_for_tasks(
     train_ratio: float = 0.7,
     val_ratio: float = 0.15,
     holdout_ratio: float = 0.15,
+    seed: int = 42,
 ) -> dict[str, Any]:
-    """对多个 Issue 运行所有 Gate，生成审计报告。"""
+    """对多个 Issue 运行所有 Gate，生成审计报告。
+
+    P0-6: 使用固定 seed 做可复现分割，生成带 SHA256 的 split manifest；
+          使用 task 数据中的 repo 字段（而非 instance_id 前缀推断）做 repo 级隔离。
+    """
+    import random  # noqa: F401
     recon_path = Path(r'F:\test\gemma4\mini_eval\reconstructed.json')
     recon = {}
     if recon_path.exists():
         recon = json.loads(recon_path.read_text(encoding="utf-8"))
 
-    # 按 repo 前缀分组，确保同一 repo 的所有 instance 在同一个 split
+    # Build repo_map from task data (instance_id -> repo), not from instance_id prefix
+    repo_map: dict[str, str] = {}
+    for tid in task_ids:
+        task = recon.get(tid, {})
+        repo = task.get("repo", "")
+        repo_map[tid] = repo if repo else tid
+
+    # 按 repo 分组，确保同一 repo 的所有 instance 在同一个 split
     repo_groups: dict[str, list[str]] = {}
     for tid in task_ids:
-        prefix = tid.rsplit("_", 1)[0] if "_" in tid else tid
-        repo_groups.setdefault(prefix, []).append(tid)
+        repo = repo_map.get(tid, tid)
+        repo_groups.setdefault(repo, []).append(tid)
 
-    # 按 repo 分组分配 split
+    # P0-6: 固定 seed 做可复现的 split
+    random.seed(seed)
     repo_list = sorted(repo_groups.keys())
+    random.shuffle(repo_list)
     n_repos = len(repo_list)
     n_train = max(1, int(n_repos * train_ratio))
     n_val = max(1, int(n_repos * val_ratio))
@@ -435,12 +499,29 @@ def run_gates_for_tasks(
     val_ids: set[str] = set()
     holdout_ids: set[str] = set()
 
-    for prefix in train_repos:
-        train_ids.update(repo_groups[prefix])
-    for prefix in val_repos:
-        val_ids.update(repo_groups[prefix])
-    for prefix in holdout_repos:
-        holdout_ids.update(repo_groups[prefix])
+    for repo in train_repos:
+        train_ids.update(repo_groups[repo])
+    for repo in val_repos:
+        val_ids.update(repo_groups[repo])
+    for repo in holdout_repos:
+        holdout_ids.update(repo_groups[repo])
+
+    # 生成 split manifest (带 SHA256)
+    split_manifest = {
+        "seed": seed,
+        "train_ratio": train_ratio,
+        "val_ratio": val_ratio,
+        "holdout_ratio": holdout_ratio,
+        "train_repos": sorted(train_repos),
+        "val_repos": sorted(val_repos),
+        "holdout_repos": sorted(holdout_repos),
+        "train_ids": sorted(train_ids),
+        "val_ids": sorted(val_ids),
+        "holdout_ids": sorted(holdout_ids),
+    }
+    manifest_json = json.dumps(split_manifest, sort_keys=True, ensure_ascii=False)
+    manifest_sha256 = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
+    split_manifest["sha256"] = manifest_sha256
 
     all_results = []
     eligible_samples = []
@@ -450,6 +531,7 @@ def run_gates_for_tasks(
         if not task:
             continue
         repo_dir = Path(r'F:\test\gemma4\mini_eval\repos') / tid
+        base_commit = task.get("base_commit", "")
         val_res = validation_results.get(tid)
         lab_res = labels_results.get(tid)
 
@@ -459,10 +541,12 @@ def run_gates_for_tasks(
             validation_result=val_res,
             labels_result=lab_res,
             repo_dir=repo_dir,
+            base_commit=base_commit,
             all_instance_ids=task_ids,
             train_ids=train_ids,
             val_ids=val_ids,
             holdout_ids=holdout_ids,
+            repo_map=repo_map,
             output_dir=output_dir,
         )
         all_results.append(res)
@@ -497,6 +581,7 @@ def run_gates_for_tasks(
             "val": len(val_ids),
             "holdout": len(holdout_ids),
         },
+        "split_manifest": split_manifest,
         "train_repos": sorted(train_repos),
         "val_repos": sorted(val_repos),
         "holdout_repos": sorted(holdout_repos),
@@ -533,6 +618,8 @@ def main():
                     help="要运行 Gate 的 task id 列表")
     ap.add_argument("--output-dir", default=r"F:\test\gemma4\training\data\processed",
                     help="处理后数据输出目录")
+    ap.add_argument("--seed", type=int, default=42,
+                    help="分割随机种子（可复现）")
     args = ap.parse_args()
 
     # 加载验证结果和标签结果（如果已存在）
@@ -558,6 +645,7 @@ def main():
         validation_results=validation_results,
         labels_results=labels_results,
         output_dir=gates_dir,
+        seed=args.seed,
     )
 
 
