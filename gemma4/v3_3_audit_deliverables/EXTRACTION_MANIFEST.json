@@ -512,9 +512,9 @@
     "synthetic_metrics_pattern_found": true,
     "g1_script_launches_subprocess": false,
     "hardcoded_absolute_path_scripts": [
-      "scripts/generate_manifest.py",
       "scripts/run_v3_3_ablation_suite.py",
+      "scripts/generate_manifest.py",
       "scripts/run_g1_g2_experiments.py"
     ]
   }
-}\n
+}

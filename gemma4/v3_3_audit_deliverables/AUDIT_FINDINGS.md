@@ -6,12 +6,15 @@ Automated archive-integrity, JSON syntax, ledger/trajectory consistency, and sta
 ## Results
 - Archive entries: 77; extracted files: 71.
 - ZIP CRC test: passed.
-- JSON files parsed: 46; JSON parse failures: [].
+- JSON files parsed: 46; JSON parse failures: 0.
 - G1 ledger rows: 45; unique run IDs: 45; ledger IDs missing trajectory files: 0.
 - G1 script generates random metrics: True.
 - G1 script launches a test subprocess: False.
-- Python scripts containing hard-coded /home/user/ paths: ["scripts/generate_manifest.py", "scripts/run_v3_3_ablation_suite.py", "scripts/run_g1_g2_experiments.py"].
+- Python scripts containing hard-coded /home/user/ paths: ["scripts/run_v3_3_ablation_suite.py", "scripts/generate_manifest.py", "scripts/run_g1_g2_experiments.py"].
 - No duplicate ZIP paths or path traversal entries were accepted.
+
+## JSON parse errors
+None.
 
 ## Findings
 
@@ -22,7 +25,7 @@ scripts/run_g1_g2_experiments.py generates run-level values with random function
 The experiment script seeds with random.seed(seed + hash(cand)). Python's built-in hash() is randomized between processes unless PYTHONHASHSEED is fixed; output may therefore change across runs.
 
 ### Medium — machine-specific paths
-Hard-coded absolute paths were found in: ["scripts/generate_manifest.py", "scripts/run_v3_3_ablation_suite.py", "scripts/run_g1_g2_experiments.py"]. Derive paths from Path(__file__).resolve() or accept workspace/output directories as CLI arguments.
+Hard-coded absolute paths were found in: ["scripts/run_v3_3_ablation_suite.py", "scripts/generate_manifest.py", "scripts/run_g1_g2_experiments.py"]. Derive paths from Path(__file__).resolve() or accept workspace/output directories as CLI arguments.
 
 ### Medium — manifest coverage
 The manifest generator uses non-recursive glob("*") for category files and summarizes trajectories as a count rather than recording a SHA-256 for every trajectory. Use recursive traversal and verify every file digest.
