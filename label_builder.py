@@ -2,27 +2,26 @@
 """
 Stage S3 — 6-Task Label Construction with Label Provenance
 
-为每个 Issue 构建 6 种训练任务标签，每个标签都带完整的来源追踪（Label Provenance）：
+F6 修复后的设计：
+- 只允许两类来源进入标签：problem_statement（Issue 文本）与 gold_diff（监督答案）。
+- gold test_diff 只能作为分析材料（gold_test_patch_analysis），产物一律 weak /
+  training_eligible=False；test_diff 从未被真实执行，不得声称 test_execution。
+- 不存在可信证据的任务（Issue Understanding / Root Cause）默认排除在正式训练外，
+  由未来的模型提议 + 证据校验 + 人工审计流程产生 Strong 标签后才会放行。
+- 每条记录携带 training_eligible 与 eligibility_note，最终资格由 S5 Gate 决定。
 
-1. Issue Understanding      - 从 Issue 提取症状、预期行为、约束
-2. Bug Localization         - 定位缺陷文件/符号（Weak 标签，不默认入训练）
-3. Test Reasoning           - 理解测试意图、边界、失败机制
-4. Root Cause & Repair Plan - 根因分析 + 修复方案
-5. Patch Generation         - 生成正确 Patch（Strong 标签，来自 Gold Patch）
-6. Test Result Interpretation - 基于测试执行日志的错误诊断
-
-Label Provenance 字段：
-- label_source: gold_patch / test_execution / human_review / model_proposal / derived
-- label_strength: strong / medium / weak
-- evidence: 支持标签的原始证据
-- verified: 是否经过自动或人工验证
-- confidence: 标签置信度
-
-防泄漏：所有标签构造仅使用 base_commit 状态的代码和测试，不包含修复后代码。
+任务与默认资格：
+1. Issue Understanding       - weak/derived,      training_eligible=False（Issue 复制不是理解）
+2. Bug Localization          - weak/gold_patch,   training_eligible=False（仅候选文件证据）
+3. Test Reasoning            - weak/gold_test_patch_analysis, training_eligible=False
+4. Root Cause & Repair Plan  - weak/derived,      training_eligible=False（模板伪监督）
+5. Patch Generation          - strong/gold_patch, training_eligible=True（最终需 S4 验证）
+6. Test Result Interpretation - 仅在有真实执行日志时生成（strong/test_execution）
 
 输出：
-  <output_dir>/labels/<instance_id>/<task_type>.jsonl
-  <output_dir>/labels/summary.json
+  <output_dir>/<instance_id>/<task_type>.jsonl
+  <output_dir>/<instance_id>/provenance.json
+  <output_dir>/summary.json
 """
 
 import json
@@ -32,15 +31,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# 复用 context_builder 的符号提取工具
-sys.path.insert(0, r'F:\test\gemma4\training\src')
-from context_builder import (  # noqa: E402
-    extract_symbols_from_text,
-    extract_imports_from_test_diff,
-    extract_test_funcs_from_test_diff,
-    build_issue_from_test_diff,
-    posix_path,
-)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import paths_config as pc  # noqa: E402
+except ImportError:  # pragma: no cover
+    pc = None
+
+from context_builder import extract_symbols_from_text, posix_path  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Label Provenance 构造器
@@ -52,6 +50,8 @@ def make_provenance(
     evidence: str | None = None,
     verified: bool = False,
     confidence: float = 1.0,
+    training_eligible: bool = False,
+    eligibility_note: str = "",
 ) -> dict[str, Any]:
     return {
         "label_source": label_source,
@@ -59,134 +59,141 @@ def make_provenance(
         "evidence": evidence or "",
         "verified": verified,
         "confidence": confidence,
+        "training_eligible": training_eligible,
+        "eligibility_note": eligibility_note,
         "created_utc": datetime.now(timezone.utc).isoformat(),
     }
 
 
 # ---------------------------------------------------------------------------
-# Task 1 — Issue Understanding
+# Task 1 — Issue Understanding（F6: 仅从 problem_statement 构建，禁止 test_diff）
 # ---------------------------------------------------------------------------
 
 def build_issue_understanding(
     instance_id: str,
     issue: str,
-    test_diff: str,
 ) -> dict[str, Any] | None:
-    """从 Issue 和 test_diff 提取问题理解。"""
+    """从 Issue 文本构建问题理解标签。
+
+    F6: 不再从 test_diff 抽取 imports/assert 充当 expected_behavior —
+    那会把 "Issue 理解" 变成 "Issue 复制 + 测试 diff 解析"。
+    在没有人工/模型审计前，target 只包含可从 Issue 直接得到的结构化信息，
+    其余字段留空并标记为 proposed；标签默认不进入正式训练。
+    """
     if not issue.strip():
         return None
 
-    imports = extract_imports_from_test_diff(test_diff)
-    test_funcs = extract_test_funcs_from_test_diff(test_diff)
-
-    # 从 issue 中提取症状关键词
     symptom_keywords = extract_symbols_from_text(issue)
 
     output = {
         "symptom": issue[:500],
-        "expected_behavior": "",
+        "expected_behavior": "",       # 需人工/模型审计后填充，禁止从 test_diff 提取
         "actual_behavior": "",
         "constraints": [],
         "unknowns": [],
-        "relevant_imports": imports[:10],
-        "relevant_test_functions": test_funcs[:10],
+        "symptom_keywords": symptom_keywords[:15],
+        "note": "Proposed label derived from issue text only. "
+                "expected_behavior MUST come from human/model audit, not gold test diff.",
     }
-
-    # 从 test_diff 中提取预期行为（断言）
-    for m in re.finditer(r'assert\s+(.+)', test_diff):
-        output["expected_behavior"] += m.group(1).strip() + "; "
 
     provenance = make_provenance(
         label_source="derived",
-        label_strength="medium",
-        evidence=f"test_diff imports={imports[:5]}, test_funcs={test_funcs[:5]}",
+        label_strength="weak",
+        evidence=f"issue text only ({len(issue)} chars)",
         verified=False,
-        confidence=0.6,
+        confidence=0.3,
+        training_eligible=False,
+        eligibility_note="issue copying is not issue understanding; needs audited expected_behavior",
     )
 
     return {
         "sample_id": f"{instance_id}_issue_understanding",
         "instance_id": instance_id,
         "task_type": "issue_understanding",
-        "difficulty": "single_file",
         "issue": issue,
-        "code_context": "",
-        "test_context": test_diff[:2000],
-        "evidence": {
-            "source_files": [],
-            "tests": [],
-            "verified": False,
-        },
         "target": json.dumps(output, ensure_ascii=False, indent=2),
         "provenance": provenance,
+        "training_eligible": False,
     }
 
 
 # ---------------------------------------------------------------------------
-# Task 2 — Bug Localization (Weak，不默认入训练)
+# Task 2 — Bug Localization（F6: 区分 gold_changed_files 与 suspected_bug_files）
 # ---------------------------------------------------------------------------
 
 def build_bug_localization(
     instance_id: str,
     issue: str,
     src_files: list[str],
-    test_diff: str,
     gold_diff: str,
 ) -> dict[str, Any] | None:
-    """构建缺陷定位标签（Weak，基于 Gold Patch 修改文件）。
+    """构建缺陷定位候选标签（Weak）。
 
-    注意：Patch 修改文件不等于缺陷唯一位置，仅作为弱标签。
+    F6: gold patch 修改文件 ≠ 缺陷唯一位置。输出区分：
+    - gold_changed_files: gold patch 实际修改的文件（事实）
+    - suspected_bug_files: 结合 Issue 符号匹配的候选文件（Hit@K 候选）
+    每个候选附 evidence。标签默认不进入正式训练。
     """
-    if not src_files:
+    gold_changed_files: list[str] = []
+    if gold_diff:
+        for m in re.finditer(r'^\+\+\+\s+b/(.+)', gold_diff, re.MULTILINE):
+            gold_changed_files.append(m.group(1).strip())
+
+    # 候选排序：gold_changed_files 优先（作为 top-1 候选），其余来自 Issue 符号匹配
+    issue_symbols = extract_symbols_from_text(issue)
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for rank, f in enumerate(gold_changed_files[:10]):
+        candidates.append({
+            "file": f,
+            "rank": rank,
+            "evidence": "modified by gold patch (weak evidence for defect location)",
+        })
+        seen.add(f)
+    extra = [f for f in (src_files or []) if f not in seen]
+    for f in extra[:10]:
+        candidates.append({
+            "file": f,
+            "rank": len(candidates),
+            "evidence": "listed in src_files metadata",
+        })
+        seen.add(f)
+
+    if not candidates:
         return None
 
-    # 从 gold_diff 中提取修改的文件
-    modified_files = []
-    for m in re.finditer(r'^\+\+\+\s+b/(.+)', gold_diff, re.MULTILINE):
-        modified_files.append(m.group(1).strip())
-
     output = {
-        "suspected_files": modified_files[:10],
-        "suspected_symbols": [],
-        "evidence": [
-            f"Gold patch modifies: {', '.join(modified_files[:5])}"
-        ],
-        "confidence": "medium",
-        "note": "Weak label: patch files may include refactoring, not just defect location.",
+        "gold_changed_files": gold_changed_files[:10],
+        "suspected_bug_files": [c["file"] for c in candidates[:10]],
+        "candidates": candidates,
+        "suspected_symbols": issue_symbols[:10],
+        "note": "gold_changed_files (what the fix touched) is a different concept from "
+                "bug_location (where the defect is). Weak label; do not treat as ground truth.",
     }
 
-    # 从 issue 中提取可能相关的符号作为 suspected_symbols
-    symbols = extract_symbols_from_text(issue + " " + test_diff)
-    output["suspected_symbols"] = symbols[:10]
-
     provenance = make_provenance(
-        label_source="derived",
+        label_source="gold_patch",
         label_strength="weak",
-        evidence=f"gold_diff modified files: {modified_files[:5]}",
+        evidence=f"gold patch modifies {len(gold_changed_files)} file(s)",
         verified=False,
         confidence=0.4,
+        training_eligible=False,
+        eligibility_note="localization needs Hit@K evaluation and human review",
     )
 
     return {
         "sample_id": f"{instance_id}_bug_localization",
         "instance_id": instance_id,
         "task_type": "bug_localization",
-        "difficulty": "multi_file" if len(modified_files) > 1 else "single_file",
         "issue": issue,
-        "code_context": "",
-        "test_context": test_diff[:2000],
-        "evidence": {
-            "source_files": src_files,
-            "tests": [],
-            "verified": False,
-        },
         "target": json.dumps(output, ensure_ascii=False, indent=2),
         "provenance": provenance,
+        "training_eligible": False,
     }
 
 
 # ---------------------------------------------------------------------------
-# Task 3 — Test Reasoning
+# Task 3 — Test Reasoning（F6: gold_test_patch_analysis，无执行证据）
 # ---------------------------------------------------------------------------
 
 def build_test_reasoning(
@@ -195,136 +202,109 @@ def build_test_reasoning(
     test_diff: str,
     test_files: list[str],
 ) -> dict[str, Any] | None:
-    """构建测试推理标签（Medium，需要测试证据支持）。"""
+    """构建测试推理标签（Weak，静态分析 gold test patch，未执行任何测试）。
+
+    F6: label_source 更正为 gold_test_patch_analysis（此前误标 test_execution）。
+    test_diff 的存在 ≠ 测试执行；assert 的存在 ≠ 测试推理。
+    """
     if not test_diff.strip():
         return None
 
-    test_funcs = extract_test_funcs_from_test_diff(test_diff)
-
-    # 提取断言
-    assertions = []
-    for m in re.finditer(r'assert\s+(.+)', test_diff):
-        assertions.append(m.group(1).strip())
-
-    # 提取 pytest.raises / pytest.warns
-    raises_patterns = []
-    for m in re.finditer(r'pytest\.(raises|warns)\s*\(\s*([^,\)]+)', test_diff):
-        raises_patterns.append(f"{m.group(1)}({m.group(2).strip()})")
+    test_funcs = [m.group(1) for m in
+                  re.finditer(r'^\+\s*def\s+(test_[a-zA-Z0-9_]*)\s*\(', test_diff, re.MULTILINE)]
+    assertions = [m.group(1).strip() for m in re.finditer(r'assert\s+(.+)', test_diff)]
+    raises_patterns = [f"{m.group(1)}({m.group(2).strip()})" for m in
+                       re.finditer(r'pytest\.(raises|warns)\s*\(\s*([^,\)]+)', test_diff)]
 
     output = {
         "existing_tests_relevant": test_files[:10],
-        "missing_coverage": [],
-        # P0-4: 不再编造 proposed_tests，仅从 test_diff 静态提取已有断言
+        "new_test_functions": test_funcs[:10],
         "assertions": assertions[:10],
         "raises_patterns": raises_patterns[:10],
-        "note": "Derived statically from test_diff; not verified by execution.",
+        "note": "Statically derived from gold test patch. No test was executed. "
+                "Real test reasoning requires execution evidence or human review.",
     }
 
     provenance = make_provenance(
-        label_source="test_diff_derived",   # P0-4: 不是 test_execution
-        label_strength="weak",              # P0-4: 弱标签，静态推导
-        evidence=f"test_diff has {len(test_funcs)} test functions, {len(assertions)} assertions",
+        label_source="gold_test_patch_analysis",
+        label_strength="weak",
+        evidence=f"test patch has {len(test_funcs)} new test funcs, {len(assertions)} assertions",
         verified=False,
-        confidence=0.4,
+        confidence=0.3,
+        training_eligible=False,
+        eligibility_note="no execution evidence; label_source was previously mislabeled as test_execution",
     )
 
     return {
         "sample_id": f"{instance_id}_test_reasoning",
         "instance_id": instance_id,
         "task_type": "test_reasoning",
-        "difficulty": "single_file",
         "issue": issue,
-        "code_context": "",
-        "test_context": test_diff,
-        "evidence": {
-            "source_files": [],
-            "tests": test_files,
-            "verified": False,
-        },
         "target": json.dumps(output, ensure_ascii=False, indent=2),
         "provenance": provenance,
+        "training_eligible": False,
     }
 
 
 # ---------------------------------------------------------------------------
-# Task 4 — Root Cause & Repair Plan
+# Task 4 — Root Cause & Repair Plan（F6: 默认排除出正式训练）
 # ---------------------------------------------------------------------------
 
 def build_root_cause_repair_plan(
     instance_id: str,
     issue: str,
-    src_files: list[str],
-    test_files: list[str],
     gold_diff: str,
-    test_diff: str,
 ) -> dict[str, Any] | None:
-    """构建根因与修复方案标签（Medium，需要证据门禁验证）。
+    """构建根因与修复方案标签（Weak，模板伪监督，默认排除）。
 
-    不能仅凭 Gold Patch 反推根因，需要证据支持。
+    F6: 当前没有能力从 gold_diff 推断真实 root cause — 任何固定模板句子
+    （"Apply gold patch modifications"）都不是根因分析。此任务从正式自动构建
+    中剔除，未来由模型基于 base context 提议诊断候选，再经代码证据、
+    Test Evidence、Patch 行为一致性验证 + 人工审计后才会成为 Strong 标签。
     """
     if not gold_diff.strip():
         return None
 
-    # 从 gold_diff 中提取修改的文件和大致逻辑
-    modified_files = []
-    for m in re.finditer(r'^\+\+\+\s+b/(.+)', gold_diff, re.MULTILINE):
-        modified_files.append(m.group(1).strip())
-
-    # 提取添加的行（+ 开头，非 +++）
-    added_lines = []
-    removed_lines = []
-    for line in gold_diff.splitlines():
-        if line.startswith('+') and not line.startswith('+++'):
-            added_lines.append(line[1:])
-        elif line.startswith('-') and not line.startswith('---'):
-            removed_lines.append(line[1:])
+    modified_files = [m.group(1).strip() for m in
+                      re.finditer(r'^\+\+\+\s+b/(.+)', gold_diff, re.MULTILINE)]
+    added = sum(1 for l in gold_diff.splitlines() if l.startswith('+') and not l.startswith('+++'))
+    removed = sum(1 for l in gold_diff.splitlines() if l.startswith('-') and not l.startswith('---'))
 
     output = {
-        "root_cause": "Derived from gold patch analysis - pseudo-supervision, see evidence",
+        "root_cause": "NOT_DERIVED — template placeholder, excluded from training",
         "evidence": [
-            f"Modified files: {', '.join(modified_files[:5])}",
-            f"Added {len(added_lines)} lines, removed {len(removed_lines)} lines",
+            f"gold patch modifies {len(modified_files)} file(s); +{added}/-{removed} lines",
         ],
-        "repair_strategy": "Apply gold patch modifications",
+        "repair_strategy": "NOT_DERIVED — needs model-proposed diagnosis with evidence",
         "target_components": modified_files[:5],
-        "implementation_steps": [
-            "Identify defect location",
-            "Implement fix per gold patch",
-            "Verify against target tests",
-        ],
-        "risks": ["Patch may include refactoring not related to defect"],
-        "alternatives_rejected": [],
-        "exclude_from_training": True,   # P0-3: 伪监督，不默认入正式训练
+        "exclude_from_training": True,
+        "note": "Patch statistics are not root cause analysis. "
+                "Future: model-proposed diagnosis validated against code/test evidence.",
     }
 
     provenance = make_provenance(
         label_source="derived",
-        label_strength="weak",             # P0-3: 从 gold_diff 推导，弱标签
-        evidence=f"gold_diff modified {len(modified_files)} files, {len(added_lines)} added lines",
+        label_strength="weak",
+        evidence=f"gold_diff modified {len(modified_files)} files, +{added}/-{removed} lines",
         verified=False,
-        confidence=0.3,
+        confidence=0.2,
+        training_eligible=False,
+        eligibility_note="template pseudo-supervision; would teach shortcut behavior",
     )
 
     return {
         "sample_id": f"{instance_id}_root_cause_repair_plan",
         "instance_id": instance_id,
         "task_type": "root_cause_repair_plan",
-        "difficulty": "multi_file" if len(modified_files) > 1 else "single_file",
         "issue": issue,
-        "code_context": "",
-        "test_context": test_diff[:2000],
-        "evidence": {
-            "source_files": src_files,
-            "tests": test_files,
-            "verified": False,
-        },
         "target": json.dumps(output, ensure_ascii=False, indent=2),
         "provenance": provenance,
+        "training_eligible": False,
     }
 
 
 # ---------------------------------------------------------------------------
-# Task 5 — Patch Generation (Strong)
+# Task 5 — Patch Generation（Strong；最终资格由 S4/S5 验证决定）
 # ---------------------------------------------------------------------------
 
 def build_patch_generation(
@@ -335,59 +315,35 @@ def build_patch_generation(
 ) -> dict[str, Any] | None:
     """构建 Patch Generation 标签（Strong，来自 Gold Patch）。
 
-    需要验证：
-    1. Diff 可解析
-    2. 可在 base_commit 上 apply
-    3. 文件存在
-    4. Patch 非空
+    资格条件（S4 验证后由 Gate 最终决定）：
+    gold_diff 可解析、可在 base_commit 上 git apply、修改后文件语法通过。
     """
-    if not gold_diff.strip():
+    if not gold_diff.strip() or "@@" not in gold_diff:
         return None
-
-    # 验证 patch 可解析
-    edits = []
-    current_file = None
-    for line in gold_diff.splitlines(keepends=True):
-        if line.startswith("+++ b/"):
-            current_file = line[6:].rstrip("\n")
-        elif line.startswith("@@"):
-            # 简单解析：收集 +/- 行
-            pass
-
-    # 这里只做基础验证：gold_diff 非空且包含 diff 标记
-    if "@@" not in gold_diff:
-        return None
-
-    output = gold_diff
 
     provenance = make_provenance(
         label_source="gold_patch",
         label_strength="strong",
         evidence=f"gold_diff from base_commit, {len(gold_diff)} chars",
-        verified=False,  # 需要后续 Gate 验证 apply 和测试
+        verified=False,   # S4 git apply 验证后由 Gate 置 True
         confidence=0.9,
+        training_eligible=True,
+        eligibility_note="gold patch; final eligibility requires S4 validation pass",
     )
 
     return {
         "sample_id": f"{instance_id}_patch_generation",
         "instance_id": instance_id,
         "task_type": "patch_generation",
-        "difficulty": "multi_file" if len(src_files) > 1 else "single_file",
         "issue": issue,
-        "code_context": "",
-        "test_context": "",
-        "evidence": {
-            "source_files": src_files,
-            "tests": [],
-            "verified": False,
-        },
-        "target": output,
+        "target": gold_diff,
         "provenance": provenance,
+        "training_eligible": True,
     }
 
 
 # ---------------------------------------------------------------------------
-# Task 6 — Test Result Interpretation (Strong，需要运行日志)
+# Task 6 — Test Result Interpretation（Strong，必须来自真实执行日志）
 # ---------------------------------------------------------------------------
 
 def build_test_result_interpretation(
@@ -396,9 +352,9 @@ def build_test_result_interpretation(
     patch: str | None,
     test_evidence: dict | None,
 ) -> dict[str, Any] | None:
-    """构建测试结果解释标签（Strong，必须有运行日志）。
+    """构建测试结果解释标签（Strong，必须有真实测试执行日志）。
 
-    如果没有实际测试执行日志，返回 None。
+    没有执行日志 → 返回 None（不生成）。
     """
     if not test_evidence:
         return None
@@ -407,7 +363,6 @@ def build_test_result_interpretation(
     stderr = test_evidence.get("stderr", "")
     exit_code = test_evidence.get("exit_code", -1)
 
-    # 判断失败类别
     failure_category = "unknown"
     if "SyntaxError" in stderr:
         failure_category = "syntax_error"
@@ -429,7 +384,6 @@ def build_test_result_interpretation(
         "exit_code": exit_code,
     }
 
-    # 提取失败位置
     for m in re.finditer(r'File "([^"]+)", line (\d+)', stderr):
         output["failure_location"] = f"{m.group(1)}:{m.group(2)}"
         break
@@ -440,23 +394,18 @@ def build_test_result_interpretation(
         evidence=f"exit_code={exit_code}, category={failure_category}",
         verified=True,
         confidence=1.0,
+        training_eligible=True,
+        eligibility_note="derived from real execution log",
     )
 
     return {
         "sample_id": f"{instance_id}_test_result_interpretation",
         "instance_id": instance_id,
         "task_type": "test_result_interpretation",
-        "difficulty": "single_file",
         "issue": issue,
-        "code_context": patch or "",
-        "test_context": json.dumps(test_evidence, ensure_ascii=False),
-        "evidence": {
-            "source_files": [],
-            "tests": [],
-            "verified": True,
-        },
         "target": json.dumps(output, ensure_ascii=False, indent=2),
         "provenance": provenance,
+        "training_eligible": True,
     }
 
 
@@ -469,47 +418,50 @@ def build_labels_for_issue(
     task: dict,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """为单个 Issue 构建 6 种任务标签。"""
-    issue = task.get("problem_statement", "") or build_issue_from_test_diff(
-        task.get("test_diff", ""), instance_id
-    )
-    test_diff = task.get("test_diff", "")
-    gold_diff = task.get("gold_diff", "")
-    src_files = task.get("src_files", [])
-    test_files = task.get("test_files", [])
+    """为单个 Issue 构建 6 种任务标签（F6 语义）。"""
+    problem = (task.get("problem_statement", "") or "").strip()
+    gold_diff = task.get("gold_diff", "") or ""
+    test_diff = task.get("test_diff", "") or ""
+    src_files = task.get("src_files", []) or []
+    test_files = task.get("test_files", []) or []
 
-    results = {
+    # F6: problem_statement 缺失 → 不构造 issue（禁止 test_diff 造 issue）
+    issue = problem if problem else f"[MISSING_ISSUE_TEXT] {instance_id}"
+    issue_source = "problem_statement" if problem else "missing"
+
+    results: dict[str, Any] = {
         "instance_id": instance_id,
+        "issue_source": issue_source,
         "tasks": {},
     }
 
-    # Task 1: Issue Understanding
-    t1 = build_issue_understanding(instance_id, issue, test_diff)
-    if t1:
-        results["tasks"]["issue_understanding"] = t1
+    # Task 1: Issue Understanding（仅 problem_statement 存在时才有意义）
+    if problem:
+        t1 = build_issue_understanding(instance_id, issue)
+        if t1:
+            results["tasks"]["issue_understanding"] = t1
 
-    # Task 2: Bug Localization (Weak)
-    t2 = build_bug_localization(instance_id, issue, src_files, test_diff, gold_diff)
+    # Task 2: Bug Localization（weak）
+    t2 = build_bug_localization(instance_id, issue, src_files, gold_diff)
     if t2:
         results["tasks"]["bug_localization"] = t2
 
-    # Task 3: Test Reasoning
+    # Task 3: Test Reasoning（weak，静态分析）
     t3 = build_test_reasoning(instance_id, issue, test_diff, test_files)
     if t3:
         results["tasks"]["test_reasoning"] = t3
 
-    # Task 4: Root Cause & Repair Plan
-    t4 = build_root_cause_repair_plan(instance_id, issue, src_files, test_files, gold_diff, test_diff)
+    # Task 4: Root Cause（weak，默认排除）
+    t4 = build_root_cause_repair_plan(instance_id, issue, gold_diff)
     if t4:
         results["tasks"]["root_cause_repair_plan"] = t4
 
-    # Task 5: Patch Generation (Strong)
+    # Task 5: Patch Generation（strong）
     t5 = build_patch_generation(instance_id, issue, gold_diff, src_files)
     if t5:
         results["tasks"]["patch_generation"] = t5
 
-    # Task 6: Test Result Interpretation (需要测试证据，暂时跳过)
-    # 需要后续从 patch_correctness_exp 或实际执行中获取
+    # Task 6: Test Result Interpretation（需要真实执行日志；此处无）
     results["tasks"]["test_result_interpretation"] = None
 
     # 保存
@@ -523,11 +475,11 @@ def build_labels_for_issue(
         with open(task_file, "w", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    # 保存 provenance 汇总
-    prov_file = issue_dir / "provenance.json"
+    # provenance 汇总（含 training_eligible map，供 S5 Gate 使用）
     prov_data = {
         "instance_id": instance_id,
-        "task_types": list(results["tasks"].keys()),
+        "issue_source": issue_source,
+        "task_types": [k for k, v in results["tasks"].items() if v is not None],
         "label_sources": {
             k: (v["provenance"]["label_source"] if v else "skipped")
             for k, v in results["tasks"].items()
@@ -536,8 +488,15 @@ def build_labels_for_issue(
             k: (v["provenance"]["label_strength"] if v else "skipped")
             for k, v in results["tasks"].items()
         },
+        "training_eligible": {
+            k: (v["training_eligible"] if v else False)
+            for k, v in results["tasks"].items()
+        },
         "created_utc": datetime.now(timezone.utc).isoformat(),
+        "note": "F6 semantics: only patch_generation (and real-execution task 6) "
+                "can be training eligible; all derived/analyzed labels are weak.",
     }
+    prov_file = issue_dir / "provenance.json"
     prov_file.write_text(json.dumps(prov_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return results
@@ -548,9 +507,9 @@ def build_labels_for_tasks(
     output_dir: Path,
 ) -> list[dict[str, Any]]:
     """为多个任务构建标签。"""
-    recon_path = Path(r'F:\test\gemma4\mini_eval\reconstructed.json')
+    recon_path = pc.RECON_PATH if pc is not None else None
     recon = {}
-    if recon_path.exists():
+    if recon_path is not None and recon_path.exists():
         recon = json.loads(recon_path.read_text(encoding="utf-8"))
 
     results = []
@@ -563,7 +522,6 @@ def build_labels_for_tasks(
         res = build_labels_for_issue(tid, task, output_dir)
         results.append(res)
 
-    # 汇总
     summary_path = output_dir / "summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(
@@ -579,7 +537,7 @@ def main():
     ap = __import__("argparse").ArgumentParser(description="Stage S3: 6-Task Label Construction")
     ap.add_argument("--tasks", nargs="+", required=True,
                     help="要构建标签的 task id 列表")
-    ap.add_argument("--output-dir", default=r"F:\test\gemma4\training\data\processed",
+    ap.add_argument("--output-dir", default=str(pc.PROCESSED_DIR) if pc is not None else "./data/processed",
                     help="处理后数据输出目录")
     args = ap.parse_args()
 

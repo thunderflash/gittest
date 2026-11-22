@@ -1,76 +1,61 @@
 #!/usr/bin/env python3
 """
-Stage 2: Build Verified Patch DPO training data.
+Stage 2: Build Verified Patch DPO training data (gate-linked).
 
-Reads SFT verified patches (chosen = gold developer patch) and pairs them with
-rejected patches persisted by patch_correctness_exp.py (scheme edits JSON files).
+F8: 记录携带与 SFT 完全一致的 ``messages``（system+user，无 assistant），
+train_dpo.py 用同一 chat template 渲染 prompt，保证
+Prompt_Format_SFT == Prompt_Format_DPO == Prompt_Format_Inference。
 
-Each output record:
+F5 强制联接：只从 gates 输出的 eligible 样本构建 pair；
+rejected 必须是真实非空失败补丁（P0-9），并携带
+apply_status / test_status / failure_type / test_log_hash / pair_verified。
+
+每条输出记录:
 {
   "instance_id": str,
-  "prompt": "...",           # system + user (same as SFT, without assistant)
-  "chosen": "...",           # gold patch (passes FAIL_TO_PASS + PASS_TO_PASS)
-  "rejected": "...",         # failed model patch (fails tests or syntax)
+  "messages": [system, user],
+  "chosen": str,           # gold patch（SFT target）
+  "rejected": str,         # 真实失败的模型补丁
   "metadata": {...}
 }
-
-Pairs are within the same Issue (same instance_id), so the model learns
-to distinguish correct vs incorrect fixes for identical context.
-
-Rejected patch sources (priority order):
-  1. scheme_D edits that applied but failed tests (TESTS_FAIL)
-  2. scheme_B edits that applied but failed tests (TESTS_FAIL)
-  3. scheme_C edits that applied but failed tests (TESTS_FAIL)
-  4. Any scheme with PATCH_CONFLICT / EMPTY_PATCH (empty string = no-op)
 """
 
 import json
 import sys
 from pathlib import Path
 
-SFT_DATA_PATH = Path(r"F:\test\gemma4\training\data\sft_verified_patches.jsonl")
-EDITS_DIR = Path(r"F:\test\gemma4\mini_eval\results\patch_correctness_exp\edits")
-OUT_DIR = Path(r"F:\test\gemma4\training\data")
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+try:
+    import paths_config as pc
+except ImportError:
+    pc = None
+
+SFT_DATA_PATH = pc.SFT_DATA_PATH if pc else Path("data/sft_verified_patches.jsonl")
+ELIGIBLE_PATH = pc.ELIGIBLE_SAMPLES if pc else Path("data/processed/gates/eligible_samples.jsonl")
+EDITS_DIR = pc.RESULTS_DIR / "patch_correctness_exp" / "edits" if pc else \
+    Path("mini_eval/results/patch_correctness_exp/edits")
+OUT_PATH = pc.DPO_DATA_PATH if pc else Path("data/dpo_verified_patches.jsonl")
 
 
-SYSTEM_PROMPT = """You are a software engineer fixing a bug in a GitHub repository.
-Given an Issue and the relevant repository context, generate file edits that fix the bug.
-
-Output file edits using this exact format for each change:
-
-FILE: <relative file path>
-OLD_STRING:
-<exact text from the current file to replace>
-NEW_STRING:
-<replacement text>
-END
-
-Repeat FILE/OLD_STRING/NEW_STRING/END blocks for multiple edits.
-Do not include explanations outside the blocks.
-OLD_STRING must be copied EXACTLY from the current file content.
-Only modify the files that need to change to fix the bug.
-Do not add, remove, or modify unrelated code.
-"""
-
-
-def _extract_prompt_from_sft(sft_record: dict) -> str:
-    """Reconstruct the prompt (system + user) from an SFT record."""
-    msgs = sft_record["messages"]
-    parts = []
-    for m in msgs:
-        if m["role"] == "system":
-            parts.append(m["content"])
-        elif m["role"] == "user":
-            parts.append(m["content"])
-    return "\n\n".join(parts)
+def _load_eligible(eligible_path: Path) -> dict[str, dict]:
+    eligible: dict[str, dict] = {}
+    if not eligible_path.exists():
+        return eligible
+    with open(eligible_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            eligible[rec["instance_id"]] = rec
+    return eligible
 
 
 def _edits_to_patch_text(edits: list[dict]) -> str:
-    """Convert list of {filepath, old_string, new_string} to patch text blocks."""
     blocks = []
     for e in edits:
         blocks.append(
-            f"FILE: {e['filepath']}\n"
+            f"FILE: {e.get('filepath', '')}\n"
             f"OLD_STRING:\n{e.get('old_string', '')}\n"
             f"NEW_STRING:\n{e.get('new_string', '')}\n"
             f"END"
@@ -79,51 +64,67 @@ def _edits_to_patch_text(edits: list[dict]) -> str:
 
 
 def _load_edits(edits_dir: Path, tid: str, scheme: str) -> list[dict] | None:
-    """Load persisted edits for a task/scheme. Returns None if not found."""
     p = edits_dir / f"{tid}_{scheme}.json"
     if not p.exists():
         return None
-    return json.loads(p.read_text(encoding="utf-8"))
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
-def build_dpo(sft_records: list[dict], edits_dir: Path) -> list[dict]:
-    """Build DPO records pairing gold patch (chosen) with failed model patch (rejected).
+def main():
+    allow_ungated = "--allow-ungated" in sys.argv
 
-    P0-9: 只在 rejected 为真实非空补丁时才生成 DPO 对，不再使用 EMPTY_PATCH=""。
-    每条记录包含 apply_status/test_status/failure_type/test_log_hash/pair_verified。
-    """
+    if not SFT_DATA_PATH.exists():
+        print(f"ERROR: {SFT_DATA_PATH} not found. Run build_sft_data.py first.", file=sys.stderr)
+        sys.exit(1)
+
+    eligible = _load_eligible(ELIGIBLE_PATH)
+    if not eligible and not allow_ungated:
+        print("GATE LINKAGE FAIL: no eligible_samples.jsonl found.", file=sys.stderr)
+        print(f"Expected at: {ELIGIBLE_PATH}", file=sys.stderr)
+        print("Run src/quality_gates.py first, or pass --allow-ungated for local smoke only.",
+              file=sys.stderr)
+        sys.exit(2)
+
+    sft_records = []
+    with open(SFT_DATA_PATH, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                sft_records.append(json.loads(line))
+    print(f"Loaded {len(sft_records)} SFT records")
+
     sft_by_id = {r["instance_id"]: r for r in sft_records}
+
+    # 只对 gates 判定 patch_generation eligible 的实例构建 pair
+    candidate_tids = sorted(
+        tid for tid, elig in eligible.items()
+        if elig.get("task_eligibility", {}).get("patch_generation", False)
+    ) if eligible else sorted(sft_by_id.keys())
+    if not eligible and allow_ungated:
+        print("WARNING: --allow-ungated: building pairs from UNVALIDATED SFT data. "
+              "NEVER use this for formal training.", file=sys.stderr)
+
     records = []
-
-    if not edits_dir.exists():
-        print(f"WARNING: edits directory {edits_dir} not found. No DPO pairs can be built.")
-        return records
-
-    # Collect all task IDs that have edits
-    edit_tids = set()
-    for f in edits_dir.glob("*.json"):
-        parts = f.stem.rsplit("_", 1)
-        if len(parts) == 2:
-            edit_tids.add(parts[0])
-
-    for tid in edit_tids:
-        if tid not in sft_by_id:
+    no_rejected = 0
+    for tid in candidate_tids:
+        sft_rec = sft_by_id.get(tid)
+        if sft_rec is None:
             continue
-        sft_rec = sft_by_id[tid]
-        chosen_patch = sft_rec["messages"][-1]["content"]
-        prompt = _extract_prompt_from_sft(sft_rec)
+        chosen_patch = sft_rec.get("target") or sft_rec["messages"][-1]["content"]
+        # F8: messages 复制（去掉 assistant），DPO 与 SFT 的 prompt 完全一致
+        prompt_messages = [m for m in sft_rec["messages"] if m["role"] != "assistant"]
 
-        # P0-9: 查找真实的 rejected patch（非空，且应为 TESTS_FAIL 或 PATCH_CONFLICT）
         rejected_patch = None
         rejection_meta = None
         for scheme in ("scheme_D", "scheme_B", "scheme_C", "scheme_A"):
-            edits = _load_edits(edits_dir, tid, scheme)
+            edits = _load_edits(EDITS_DIR, tid, scheme) if EDITS_DIR.exists() else None
             if edits is None:
                 continue
             if len(edits) == 0:
-                # EMPTY_PATCH — 不作为 rejected，跳过
-                continue
-            # 找到非空编辑，作为 rejected 候选
+                continue    # EMPTY_PATCH 不作为 rejected
             rejected_patch = _edits_to_patch_text(edits)
             rejection_meta = {
                 "source_scheme": scheme,
@@ -132,56 +133,37 @@ def build_dpo(sft_records: list[dict], edits_dir: Path) -> list[dict]:
             }
             break
 
-        if rejected_patch is None:
-            # 没有可用的 rejected patch，跳过该 task（不生成空 rejected）
+        if rejected_patch is None or rejected_patch == chosen_patch:
+            no_rejected += 1
             continue
 
         records.append({
             "instance_id": tid,
-            "prompt": prompt,
+            "messages": prompt_messages,
             "chosen": chosen_patch,
             "rejected": rejected_patch,
             "metadata": {
-                **sft_rec["metadata"],
+                **sft_rec.get("metadata", {}),
                 "apply_status": rejection_meta.get("source_scheme", "unknown"),
-                "test_status": "failed",          # rejected 来自 TESTS_FAIL 方案
+                "test_status": "failed",
                 "failure_type": "test_failure",
-                "test_log_hash": "",              # 待 patch_correctness_exp 填充
-                "pair_verified": False,           # 待后续验证
+                "test_log_hash": "",        # 由 patch_correctness_exp 回填
+                "pair_verified": False,     # 待真实执行验证后置 True
                 "rejection_meta": rejection_meta,
             },
         })
 
-    return records
-
-
-def main():
-    if not SFT_DATA_PATH.exists():
-        print(f"ERROR: {SFT_DATA_PATH} not found. Run build_sft_data.py first.", file=sys.stderr)
-        sys.exit(1)
-
-    sft_records = []
-    with open(SFT_DATA_PATH, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                sft_records.append(json.loads(line))
-
-    print(f"Loaded {len(sft_records)} SFT records")
-
-    dpo_records = build_dpo(sft_records, EDITS_DIR)
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    out_path = OUT_DIR / "dpo_verified_patches.jsonl"
-    with open(out_path, "w", encoding="utf-8") as f:
-        for rec in dpo_records:
+    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(OUT_PATH, "w", encoding="utf-8") as f:
+        for rec in records:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    print(f"Wrote {len(dpo_records)} DPO records to {out_path}")
-    for rec in dpo_records:
-        rej_len = len(rec["rejected"])
-        print(f"  {rec['instance_id']}: chosen={len(rec['chosen'])} chars, rejected={rej_len} chars")
+    print(f"Wrote {len(records)} DPO records to {OUT_PATH}")
+    print(f"Skipped (no usable rejected): {no_rejected}")
+    for rec in records[:10]:
+        print(f"  {rec['instance_id']}: chosen={len(rec['chosen'])}B "
+              f"rejected={len(rec['rejected'])}B "
+              f"({rec['metadata'].get('apply_status')})")
 
 
 if __name__ == "__main__":

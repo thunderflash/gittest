@@ -29,6 +29,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import paths_config as pc  # noqa: E402
+except ImportError:  # pragma: no cover
+    pc = None
+
 try:
     from datasets import load_dataset
     from huggingface_hub import HfApi
@@ -104,12 +110,16 @@ def normalize_record(src: str, ds_id: str, idx: int, rec: dict) -> dict | None:
     }
 
     # provenance 字段（标签来源追踪的前置）
+    # F2: patch 存在 ≠ 可应用 ≠ 正确修复 ≠ 训练质量 strong。
+    # strong 应由 S4 验证后按任务重新赋值，下载阶段只标记 unverified。
     normalized["_provenance"] = {
-        "label_source": "dataset",        # 目前来自数据集，后续可升级为 human/model
-        "label_strength": "strong",       # 数据集自带 patch，视为 strong
-        "verified": False,                # 尚未经过自动/人工验证，需后续 Gate
-        "confidence": 1.0,
-        "schema_version": "1.0",
+        "label_source": "dataset",
+        "label_strength": "unverified",
+        "source_integrity": "raw",
+        "verified": False,
+        "confidence": 0.0,
+        "patch_present": True,
+        "schema_version": "1.1",
     }
 
     return normalized
@@ -217,7 +227,7 @@ def basic_integrity_check(records: list[dict]) -> dict:
 
 
 def acquire_source(source: str, ds_id: str, max_rows: int | None, out_dir: Path,
-                   dry_run: bool) -> dict:
+                   dry_run: bool, streaming: bool = False) -> dict:
     """下载并导出单个数据源。"""
     result = {
         "source": source,
@@ -261,6 +271,40 @@ def acquire_source(source: str, ds_id: str, max_rows: int | None, out_dir: Path,
             result["error"] = f"load_dataset failed: {e}; fallback failed: {e2}"
             print(f"[ERROR] {source}: {result['error']}", file=sys.stderr)
             return result
+
+    # F2: streaming 模式 — max_rows 时不缓存整个数据集
+    if streaming:
+        try:
+            from itertools import islice
+            ds_stream = load_dataset(ds_id, split="train", streaming=True)
+            total_available = None
+            limit = max_rows if max_rows is not None else 100000
+            rows_iter = list(islice(ds_stream, limit))
+            print(f"[ACQUIRE] {source}: streaming rows_fetched={len(rows_iter)}")
+        except Exception as e:
+            result["status"] = "failed"
+            result["error"] = f"streaming load failed: {e}"
+            print(f"[ERROR] {source}: {result['error']}", file=sys.stderr)
+            return result
+
+        written = 0
+        with open(jsonl_path, "w", encoding="utf-8") as f:
+            for i, rec in enumerate(rows_iter):
+                norm = normalize_record(source, ds_id, i, rec)
+                if norm is None:
+                    continue
+                f.write(json.dumps(norm, ensure_ascii=False) + "\n")
+                written += 1
+
+        result["rows_downloaded"] = len(rows_iter)
+        result["rows_written"] = written
+        result["output_file"] = str(jsonl_path)
+        result["sha256"] = sha256_file(jsonl_path)
+        result["streaming"] = True
+        result["integrity"] = {"note": "integrity check skipped in streaming mode (use full download for audit)"}
+        result["status"] = "completed"
+        print(f"[DONE] {source}: wrote {written} records to {jsonl_path} (streaming)")
+        return result
 
     total_available = len(ds)
     limit = total_available if max_rows is None else min(max_rows, total_available)
@@ -342,10 +386,12 @@ def main():
                     help="可选：覆盖默认 HF dataset ID，顺序需与 --sources 一一对应")
     ap.add_argument("--max-rows", type=int, default=None,
                     help="每个源最多采集行数（Smoke Test 建议 200）")
-    ap.add_argument("--output-dir", default=r"F:\test\gemma4\training\data\raw",
+    ap.add_argument("--output-dir", default=str(pc.RAW_DIR),
                     help="原始数据输出目录")
     ap.add_argument("--dry-run", action="store_true",
                     help="仅验证环境和参数，不实际下载")
+    ap.add_argument("--streaming", action="store_true",
+                    help="流式下载（max_rows 时避免缓存整个数据集）")
     args = ap.parse_args()
 
     # 解析 dataset-id 覆盖
@@ -364,7 +410,8 @@ def main():
 
     results = []
     for src in args.sources:
-        res = acquire_source(src, ds_ids[src], args.max_rows, out_dir, args.dry_run)
+        res = acquire_source(src, ds_ids[src], args.max_rows, out_dir, args.dry_run,
+                             streaming=args.streaming)
         results.append(res)
 
     # 汇总

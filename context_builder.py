@@ -26,9 +26,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# 复用 mini_eval_v13 的基础设施（仅用于路径常量，不依赖其 git 克隆）
-sys.path.insert(0, r'F:\test\gemma4\harness_v1_20261119')
-import mini_eval_v13 as me  # noqa: E402
+# 可移植路径配置（GEMMA4_ROOT 环境变量可覆盖）
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import paths_config as pc  # noqa: E402
+except ImportError:  # pragma: no cover
+    pc = None
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +43,44 @@ def sha256_text(text: str) -> str:
 
 
 def estimate_tokens(text: str) -> int:
-    """粗略估算 token 数（中英文混合按字符数/3.5，保守估计）。"""
+    """粗略估算 token 数（回退方案；正式预算应使用真实 tokenizer）。"""
     return max(1, len(text) // 3)
+
+
+class ContextBudget:
+    """上下文 token 预算管理。
+
+    tokenizer 提供时使用真实 token 计数（len(tokenizer.encode(text))），
+    否则回退到字符估算并标记 budget_mode='char_estimate'。
+    """
+
+    def __init__(self, max_tokens: int = 12000, tokenizer: Any = None,
+                 reserved_target_tokens: int = 1500):
+        # 给 assistant target 预留空间，防止拼接后超过训练 max_len
+        self.limit = max(1, max_tokens - reserved_target_tokens)
+        self.tokenizer = tokenizer
+        self.reserved_target_tokens = reserved_target_tokens
+        self.used = 0
+        self.included_files: list[str] = []
+        self.budget_mode = "tokenizer" if tokenizer is not None else "char_estimate"
+
+    def count(self, text: str) -> int:
+        if self.tokenizer is not None:
+            try:
+                return len(self.tokenizer.encode(text, add_special_tokens=False))
+            except Exception:
+                pass
+        return estimate_tokens(text)
+
+    def can_add(self, text: str) -> bool:
+        cost = self.count(text)
+        return self.used + cost <= self.limit
+
+    def add(self, text: str) -> bool:
+        if not self.can_add(text):
+            return False
+        self.used += self.count(text)
+        return True
 
 
 def posix_path(p: Path | str) -> str:
@@ -252,29 +291,6 @@ def read_file_slice(filepath: Path, start_line: int | None = None,
 
 
 # ---------------------------------------------------------------------------
-# Context 预算管理
-# ---------------------------------------------------------------------------
-
-class ContextBudget:
-    """上下文 token 预算管理。"""
-
-    def __init__(self, max_tokens: int = 12000):
-        self.max_tokens = max_tokens
-        self.used = 0
-        self.included_files: list[str] = []
-
-    def can_add(self, text: str) -> bool:
-        cost = estimate_tokens(text)
-        return self.used + cost <= self.max_tokens
-
-    def add(self, text: str) -> bool:
-        if not self.can_add(text):
-            return False
-        self.used += estimate_tokens(text)
-        return True
-
-
-# ---------------------------------------------------------------------------
 # Repo 文件索引
 # ---------------------------------------------------------------------------
 
@@ -329,6 +345,41 @@ def verify_repo_commit(repo_dir: Path, base_commit: str) -> tuple[bool, str | No
         return False, f"git rev-parse failed: {e}"
 
 
+def audit_context_leak(context: dict, test_diff: str = "", gold_patch: str = "") -> dict[str, Any]:
+    """自动化泄漏审计（F1 验收标准）。
+
+    调用方持有 test_diff / gold_patch（仅用于审计），检查它们是否出现在
+    已构建的 context 中。任何 >=20 字符的非空行若在 context 中出现即判定泄漏。
+
+    返回 {"leak_found": bool, "test_diff_hits": [...], "gold_patch_hits": [...]}。
+    """
+    def _probe_lines(diff_text: str) -> list[str]:
+        probes = []
+        for raw in diff_text.splitlines():
+            line = raw[1:].strip() if raw[:1] in ("+", "-", " ") else raw.strip()
+            if len(line) >= 20 and line not in probes:
+                probes.append(line)
+        return probes[:80]  # 上限，控制审计成本
+
+    serialized = json.dumps(context, ensure_ascii=False)
+
+    def _check(diff_text: str) -> list[str]:
+        hits = []
+        for probe in _probe_lines(diff_text):
+            if probe in serialized:
+                hits.append(probe[:120])
+        return hits
+
+    td_hits = _check(test_diff) if test_diff else []
+    gp_hits = _check(gold_patch) if gold_patch else []
+    return {
+        "leak_found": bool(td_hits or gp_hits),
+        "test_diff_hits": td_hits[:10],
+        "gold_patch_hits": gp_hits[:10],
+        "probes_tested": len(_probe_lines(test_diff)) + len(_probe_lines(gold_patch)),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Context 构建主函数
 # ---------------------------------------------------------------------------
@@ -342,9 +393,14 @@ def build_context(
     test_files: list[str] | None = None,
     max_tokens: int = 12000,
     include_repo_tree: bool = True,
+    tokenizer: Any = None,
+    reserved_target_tokens: int = 1500,
 ) -> dict[str, Any]:
     """
     为单个 Issue 构建代码上下文。
+
+    输入仅允许：Issue 文本、base_commit 状态的代码、base_commit 已有测试、repo 树。
+    不接受 test_diff / gold_patch / PR 描述（F1：从接口上移除，而非开关排除）。
 
     返回包含上下文内容和 provenance 的 dict。
     """
@@ -362,6 +418,7 @@ def build_context(
         "file_contents": {},
         "context_budget_tokens": max_tokens,
         "context_used_tokens": 0,
+        "budget_mode": "tokenizer" if tokenizer is not None else "char_estimate",
         "context_hash": "",
         "leak_check": {
             "uses_base_commit_only": False,
@@ -371,7 +428,8 @@ def build_context(
         },
     }
 
-    budget = ContextBudget(max_tokens=max_tokens)
+    budget = ContextBudget(max_tokens=max_tokens, tokenizer=tokenizer,
+                           reserved_target_tokens=reserved_target_tokens)
 
     # P0-2: 实际验证 repo 处于 base_commit，不再�编码 True
     commit_verified, commit_info = verify_repo_commit(repo_dir, base_commit)
@@ -459,13 +517,21 @@ def build_context(
             budget.add(text)
             file_contents[rel] = text
         else:
-            # 预算不足，读取部分
-            remaining = budget.max_tokens - budget.used
+            # 预算不足，按剩余 token 预算二分截断（用真实计数）
+            remaining = budget.limit - budget.used
             if remaining > 200:
-                slice_text = text[: remaining * 3]
-                if budget.can_add(slice_text):
-                    budget.add(slice_text)
-                    file_contents[rel] = f"# {rel} (truncated due to budget)\n{slice_text}"
+                lo, hi = 1, len(text)
+                best = ""
+                while lo <= hi:
+                    mid = (lo + hi) // 2
+                    if budget.count(text[:mid]) <= remaining:
+                        best = text[:mid]
+                        lo = mid + 1
+                    else:
+                        hi = mid - 1
+                if best:
+                    budget.add(best)
+                    file_contents[rel] = f"# {rel} (truncated due to budget)\n{best}"
 
     context["file_contents"] = file_contents
     context["symbol_definitions"] = symbol_defs
@@ -522,13 +588,15 @@ def save_context(context: dict, output_dir: Path) -> dict[str, Any]:
         "context_hash": context["context_hash"],
         "used_tokens": context["context_used_tokens"],
         "budget_tokens": context["context_budget_tokens"],
+        "budget_mode": context.get("budget_mode", "char_estimate"),
+        "issue_source": context.get("issue_source", "unknown"),
         "relevant_files": context["relevant_files"],
         "issue_symbols": context["issue_symbols"],
         "leak_check": context["leak_check"],
         "created_utc": datetime.datetime.now(
             datetime.timezone.utc
         ).isoformat(),
-        "note": "Context built from base_commit only. Gold patch excluded.",
+        "note": "Context built from base_commit only. Gold patch/test_diff excluded and audited.",
     }
     prov_path.write_text(json.dumps(provenance, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -552,11 +620,13 @@ def build_contexts_for_tasks(
     output_dir: Path,
     max_tokens: int = 12000,
     force_rebuild: bool = False,
+    tokenizer: Any = None,
+    reserved_target_tokens: int = 1500,
 ) -> list[dict[str, Any]]:
-    """为多个任务构建上下文。"""
-    recon_path = Path(r'F:\test\gemma4\mini_eval\reconstructed.json')
+    """为多个任务构建上下文（含自动泄漏审计）。"""
+    recon_path = pc.RECON_PATH if pc is not None else None
     recon = {}
-    if recon_path.exists():
+    if recon_path is not None and recon_path.exists():
         recon = json.loads(recon_path.read_text(encoding="utf-8"))
 
     results = []
@@ -569,14 +639,17 @@ def build_contexts_for_tasks(
         base_commit = task.get("base_commit", "")
         src_files = task.get("src_files", [])
         test_files = task.get("test_files", [])
-        test_diff = task.get("test_diff", "")
+        test_diff = task.get("test_diff", "")      # 仅用于泄漏审计，不进入 context
+        gold_diff = task.get("gold_diff", "")      # 仅用于泄漏审计，不进入 context
         problem = task.get("problem_statement", "")
 
-        # 构造有意义的 issue 描述
+        # F1: 不再从 test_diff 构造 issue。problem 缺失时使用占位并标记来源缺失。
         if problem and problem.strip():
             issue = problem
+            issue_source = "problem_statement"
         else:
-            issue = build_issue_from_test_diff(test_diff, tid)
+            issue = f"Fix the reported bug in task {tid}."
+            issue_source = "missing"
 
         # 检查是否已有 context 且不强制重建
         ctx_dir = output_dir / "contexts"
@@ -587,36 +660,33 @@ def build_contexts_for_tasks(
 
         print(f"[BUILD] {tid}: base_commit={base_commit[:12] if base_commit else 'N/A'}")
 
-        repo_dir = Path(r'F:\test\gemma4\mini_eval\repos') / tid
-        if not repo_dir.exists():
-            print(f"[WARN] {tid}: repo directory not found at {repo_dir}")
-            # 仍然生成基于 issue 的上下文（无代码）
-            context = build_context(
-                instance_id=tid,
-                issue=issue,
-                repo_dir=repo_dir,
-                base_commit=base_commit,
-                src_files=src_files,
-                test_files=test_files,
-                max_tokens=max_tokens,
-            )
-        else:
-            context = build_context(
-                instance_id=tid,
-                issue=issue,
-                repo_dir=repo_dir,
-                base_commit=base_commit,
-                src_files=src_files,
-                test_files=test_files,
-                max_tokens=max_tokens,
-            )
+        repo_dir = (pc.REPOS_DIR / tid) if pc is not None else Path(tid)
+        context = build_context(
+            instance_id=tid,
+            issue=issue,
+            repo_dir=repo_dir,
+            base_commit=base_commit,
+            src_files=src_files,
+            test_files=test_files,
+            max_tokens=max_tokens,
+            tokenizer=tokenizer,
+            reserved_target_tokens=reserved_target_tokens,
+        )
+        context["issue_source"] = issue_source
+
+        # F1: 自动泄漏审计 — test_diff/gold_patch 只在此处使用（审计侧）
+        leak_audit = audit_context_leak(context, test_diff=test_diff, gold_patch=gold_diff)
+        context["leak_check"]["gold_test_diff_excluded"] = not leak_audit["test_diff_hits"]
+        context["leak_check"]["gold_patch_excluded"] = not leak_audit["gold_patch_hits"]
+        context["leak_check"]["audit"] = leak_audit
 
         res = save_context(context, output_dir)
         results.append(res)
+        flag = "LEAK!" if leak_audit["leak_found"] else "clean"
         print(f"[DONE] {tid}: hash={context['context_hash'][:12]} "
               f"tokens={context['context_used_tokens']} "
               f"symbols={len(context['issue_symbols'])} "
-              f"files={len(context['relevant_files'])}")
+              f"files={len(context['relevant_files'])} leak_audit={flag}")
 
     return results
 
@@ -625,19 +695,37 @@ def main():
     ap = __import__("argparse").ArgumentParser(description="Stage S2: Repo Snapshot & Context Builder")
     ap.add_argument("--tasks", nargs="+", required=True,
                     help="要构建上下文的 task id 列表")
-    ap.add_argument("--output-dir", default=r"F:\test\gemma4\training\data\processed",
+    ap.add_argument("--output-dir", default=str(pc.PROCESSED_DIR) if pc is not None else "./data/processed",
                     help="处理后数据输出目录")
     ap.add_argument("--max-tokens", type=int, default=12000,
                     help="每个上下文的最大 token 预算")
+    ap.add_argument("--reserved-target-tokens", type=int, default=1500,
+                    help="为 assistant target 预留的 token 数")
+    ap.add_argument("--use-tokenizer", action="store_true",
+                    help="使用真实 tokenizer 计数 token（需模型 tokenizer 可加载）")
+    ap.add_argument("--tokenizer-name", default=None,
+                    help="tokenizer 名称/路径（默认使用训练用 QAT 模型 tokenizer）")
     ap.add_argument("--force-rebuild", action="store_true",
                     help="强制重建已存在的 context")
     args = ap.parse_args()
+
+    tokenizer = None
+    if args.use_tokenizer:
+        try:
+            from transformers import AutoTokenizer
+            name = args.tokenizer_name or "google/gemma-4-31B-it-qat-w4a16-ct"
+            tokenizer = AutoTokenizer.from_pretrained(name)
+            print(f"[TOKENIZER] using real token counting via {name}")
+        except Exception as e:
+            print(f"[WARN] tokenizer load failed ({e}); falling back to char estimate")
 
     results = build_contexts_for_tasks(
         task_ids=args.tasks,
         output_dir=Path(args.output_dir),
         max_tokens=args.max_tokens,
         force_rebuild=args.force_rebuild,
+        tokenizer=tokenizer,
+        reserved_target_tokens=args.reserved_target_tokens,
     )
 
     # 汇总

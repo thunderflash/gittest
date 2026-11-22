@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """
-Stage 2: Verified Patch DPO training for Gemma 4 31B.
+Stage 2: Verified Patch DPO for Gemma 4 31B.
 
-P1 fixes:
-- Padding mask 与 logprob 掩码保持一致（均用 -100，不再混用 pad_token_id）。
-- Prompt/completion tokenization 边界统一（同一 tokenizer 调用，避免偏移错位）。
-- Rejected 质量校验：拒绝为空或与 chosen 相同的 rejected，跳过该 pair。
-- Gradient accumulation：尾 batch 未踩到 grad_steps 时也执行 step。
-- 验证 loss、最佳 checkpoint、早停。
-
-Fine-tunes the Stage 1 SFT adapter using Direct Preference Optimization.
-chosen = verified gold patch (passes tests), rejected = failed model patch.
+F8 fixes (audit):
+- Prompt format unified with SFT/inference: prompt is rendered through the same
+  chat template (system+user messages + generation prompt). Completion tokens
+  are the chosen/rejected patch text appended after the generation prompt.
+- Padding/attention: attention masks built from real sequence lengths; completion
+  log-prob masks derived from prompt boundary + attention, never from pad id alone.
+- max_len enforced: prompt left-truncated (tail preserved), completion kept whole;
+  samples whose completion alone exceeds budget are dropped.
+- Prefix alignment: prompt token boundary verified as true prefix; on mismatch the
+  actual common-prefix length is used and the event is counted.
+- Gradient accumulation: tail windows stepped with correct scaling (shared logic
+  with SFT).
+- --preflight: loads both models, runs one batch forward/backward/step, verifies
+  reference stays frozen, saves/reloads adapter — before any real training.
 
 Usage:
   python train_dpo.py \
@@ -21,14 +26,16 @@ Usage:
     --hf-token $HF_TOKEN \
     --r 16 --alpha 32 --dropout 0.05 --lr 1e-5 \
     --epochs 2 --max_len 8192 --grad_steps 16 --batch 1 \
-    --beta 0.1 --val_ratio 0.1 --early_stopping_patience 2
+    --beta 0.1 --val_ratio 0.1 --early_stopping_patience 2 \
+    --preflight --dequantize
 """
 
 import argparse
+import glob
+import hashlib
 import json
 import os
 import random
-import hashlib
 import sys
 from pathlib import Path
 
@@ -40,6 +47,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedul
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel
 
 MODEL_ID = "google/gemma-4-31B-it-qat-w4a16-ct"
+IGNORE_INDEX = -100
 
 
 def sha256_file(p: Path) -> str:
@@ -51,159 +59,205 @@ def sha256_file(p: Path) -> str:
 
 
 class DPODataset(Dataset):
-    """每条样本：prompt + chosen + rejected patch 文本。
-    P1: 统一 tokenization，prompt/completion 边界清晰，mask 用 -100。
+    """prompt（chat template 渲染）+ chosen/rejected completion。
+
+    输入记录要求: {"messages": [system, user], "chosen": str, "rejected": str}
+    （build_dpo_data.py 从 SFT 记录复制 messages，保证与 SFT 完全一致）。
     """
 
     def __init__(self, data, tokenizer, max_len=8192):
         self.tok = tokenizer
         self.max_len = max_len
+        self.prefix_mismatch_count = 0
         self.items = []
+        skipped = 0
         for item in data:
-            prompt = item["prompt"]
-            chosen = item["chosen"]
-            rejected = item["rejected"]
-            if not rejected or rejected == chosen:
-                continue  # P1: 跳过无效 rejected
-            # 统一用 apply_chat_template 编码 prompt（system+user）
-            prompt_msgs = [
-                {"role": "system", "content": prompt.split("\n\n")[0] if "\n\n" in prompt else prompt},
-                {"role": "user", "content": prompt},
-            ]
+            messages = item.get("messages")
+            chosen = item.get("chosen", "")
+            rejected = item.get("rejected", "")
+            if not messages or not chosen or not rejected or chosen == rejected:
+                skipped += 1
+                continue
             try:
                 prompt_text = tokenizer.apply_chat_template(
-                    prompt_msgs, tokenize=False, add_generation_prompt=True
-                )
+                    messages, tokenize=False, add_generation_prompt=True)
             except Exception:
-                prompt_text = prompt
+                skipped += 1
+                continue
+            prompt_ids = tokenizer.encode(prompt_text, add_special_tokens=False)
+
+            def enc_full(completion: str) -> list[int]:
+                return tokenizer.encode(prompt_text + "\n\n" + completion,
+                                        add_special_tokens=False)
+
+            full_chosen = enc_full(chosen)
+            full_rejected = enc_full(rejected)
+
+            # max_len: completion 保持完整；prompt 与两个 full 序列同量左截
+            comp_budget = max(64, max_len - 2)
+            if len(full_chosen) - len(prompt_ids) > comp_budget or \
+               len(full_rejected) - len(prompt_ids) > comp_budget:
+                skipped += 1
+                continue
+            overflow = max(len(full_chosen), len(full_rejected)) - max_len
+            if overflow > 0:
+                if overflow >= len(prompt_ids):
+                    skipped += 1
+                    continue
+                prompt_ids = prompt_ids[overflow:]
+                full_chosen = full_chosen[overflow:]
+                full_rejected = full_rejected[overflow:]
+
+            # 前缀校验与对齐（F8）
+            def align(full: list[int]) -> int:
+                nonlocal prompt_ids
+                n = min(len(prompt_ids), len(full))
+                if full[:n] == prompt_ids[:n]:
+                    return n
+                self.prefix_mismatch_count += 1
+                # 回退到实际公共前缀
+                common = 0
+                for a, b in zip(prompt_ids, full):
+                    if a != b:
+                        break
+                    common += 1
+                return max(common, 1)
+
+            p_len_c = align(full_chosen)
+            p_len_r = align(full_rejected)
+
             self.items.append({
-                "prompt": prompt_text,
-                "chosen": chosen,
-                "rejected": rejected,
+                "full_chosen": full_chosen[:max_len],
+                "p_len_chosen": min(p_len_c, max_len),
+                "full_rejected": full_rejected[:max_len],
+                "p_len_rejected": min(p_len_r, max_len),
                 "instance_id": item.get("instance_id", ""),
             })
+        self.skipped = skipped
 
     def __len__(self):
         return len(self.items)
 
     def __getitem__(self, idx):
-        item = self.items[idx]
-        # P1: 统一 tokenization，prompt 和 full 都用同一编码方式
-        def encode(prompt_text, completion_text):
-            full_text = prompt_text + "\n\n" + completion_text
-            full_ids = self.tok.encode(full_text, add_special_tokens=False)
-            prompt_ids = self.tok.encode(prompt_text, add_special_tokens=False)
-            # 确保 prompt_ids 是 full_ids 的前缀
-            if len(prompt_ids) > len(full_ids):
-                prompt_ids = prompt_ids[:len(full_ids)]
-            return prompt_ids, full_ids
-
-        p_chosen, f_chosen = encode(item["prompt"], item["chosen"])
-        p_rej, f_rej = encode(item["prompt"], item["rejected"])
-
+        it = self.items[idx]
         return {
-            "prompt_chosen": p_chosen,
-            "full_chosen": f_chosen,
-            "prompt_rejected": p_rej,
-            "full_rejected": f_rej,
-            "instance_id": item["instance_id"],
+            "full_chosen": it["full_chosen"],
+            "p_len_chosen": it["p_len_chosen"],
+            "full_rejected": it["full_rejected"],
+            "p_len_rejected": it["p_len_rejected"],
+            "instance_id": it["instance_id"],
         }
 
 
 def collate_dpo(batch, pad_id):
-    def pad_seq(seqs, pad_val):
+    def pad_seq(seqs):
         maxlen = max(len(s) for s in seqs)
-        out = torch.full((len(seqs), maxlen), pad_val, dtype=torch.long)
+        out = torch.full((len(seqs), maxlen), pad_id, dtype=torch.long)
+        attn = torch.zeros((len(seqs), maxlen), dtype=torch.long)
         for i, s in enumerate(seqs):
             out[i, :len(s)] = torch.tensor(s, dtype=torch.long)
-        return out
+            attn[i, :len(s)] = 1                     # F8: 真实长度 attention mask
+        return out, attn
 
+    fc, fa = pad_seq([b["full_chosen"] for b in batch])
+    fr, ra = pad_seq([b["full_rejected"] for b in batch])
     return {
-        "prompt_chosen": pad_seq([b["prompt_chosen"] for b in batch], pad_id),
-        "full_chosen": pad_seq([b["full_chosen"] for b in batch], pad_id),
-        "prompt_rejected": pad_seq([b["prompt_rejected"] for b in batch], pad_id),
-        "full_rejected": pad_seq([b["full_rejected"] for b in batch], pad_id),
+        "full_chosen": fc, "chosen_attn": fa,
+        "full_rejected": fr, "rejected_attn": ra,
+        "p_len_chosen": [b["p_len_chosen"] for b in batch],
+        "p_len_rejected": [b["p_len_rejected"] for b in batch],
         "instance_id": [b["instance_id"] for b in batch],
     }
 
 
-def sequence_log_prob(logits, input_ids, prompt_len, pad_id):
-    """Compute log probability of completion tokens (after prompt_len).
+def sequence_log_prob(logits, input_ids, attn_mask, prompt_len) -> torch.Tensor:
+    """Completion token log-prob。
 
-    P1: logprob 掩码使用 -100，与 labels 保持一致；不使用 pad_token_id。
+    F8: mask = attention mask ∧ (position >= prompt_len-1 after shift)；
+    padding 永不参与（attention=0 且位于 completion 之外的 token 被排除）。
     """
-    shift_logits = logits[:, :-1, :]   # [B, T-1, V]
-    shift_ids = input_ids[:, 1:]       # [B, T-1]
+    shift_logits = logits[:, :-1, :]
+    shift_ids = input_ids[:, 1:]
+    shift_attn = attn_mask[:, 1:].to(logits.dtype)
     comp_start = max(prompt_len - 1, 0)
-    comp_logits = shift_logits[:, comp_start:, :]   # [B, T_comp, V]
-    comp_ids = shift_ids[:, comp_start:]            # [B, T_comp]
+    comp_logits = shift_logits[:, comp_start:, :]
+    comp_ids = shift_ids[:, comp_start:]
+    comp_attn = shift_attn[:, comp_start:]
 
-    log_probs = F.log_softmax(comp_logits, dim=-1)  # [B, T_comp, V]
-    gathered = log_probs.gather(-1, comp_ids.unsqueeze(-1)).squeeze(-1)  # [B, T_comp]
-
-    # P1: 用 -100 掩码 padding 位置，而不是 pad_token_id
-    pad_mask = (comp_ids != -100) & (comp_ids != pad_id)
-    gathered = gathered * pad_mask
-    return gathered.sum(dim=-1)  # [B]
+    log_probs = F.log_softmax(comp_logits, dim=-1)
+    gathered = log_probs.gather(-1, comp_ids.unsqueeze(-1)).squeeze(-1)
+    return (gathered * comp_attn).sum(dim=-1)
 
 
-def evaluate_dpo(policy, ref_model, loader, device, pad_id, beta):
-    """在验证集上计算平均 DPO loss。"""
+def dpo_loss_for_batch(policy, ref_model, b, device, beta):
+    chosen_ids = b["full_chosen"].to(device)
+    chosen_attn = b["chosen_attn"].to(device)
+    rej_ids = b["full_rejected"].to(device)
+    rej_attn = b["rejected_attn"].to(device)
+
+    with torch.no_grad():
+        ref_c = ref_model(input_ids=chosen_ids, attention_mask=chosen_attn).logits
+        ref_r = ref_model(input_ids=rej_ids, attention_mask=rej_attn).logits
+    pol_c = policy(input_ids=chosen_ids, attention_mask=chosen_attn).logits
+    pol_r = policy(input_ids=rej_ids, attention_mask=rej_attn).logits
+
+    c_pi, c_ref = [], []
+    for i in range(chosen_ids.size(0)):
+        pl = b["p_len_chosen"][i]
+        c_pi.append(sequence_log_prob(pol_c[i:i+1], chosen_ids[i:i+1],
+                                      chosen_attn[i:i+1], pl)[0])
+        c_ref.append(sequence_log_prob(ref_c[i:i+1], chosen_ids[i:i+1],
+                                       chosen_attn[i:i+1], pl)[0])
+    r_pi, r_ref = [], []
+    for i in range(rej_ids.size(0)):
+        pl = b["p_len_rejected"][i]
+        r_pi.append(sequence_log_prob(pol_r[i:i+1], rej_ids[i:i+1],
+                                      rej_attn[i:i+1], pl)[0])
+        r_ref.append(sequence_log_prob(ref_r[i:i+1], rej_ids[i:i+1],
+                                       rej_attn[i:i+1], pl)[0])
+
+    logits_diff = (torch.stack(c_pi) - torch.stack(c_ref)) - \
+                  (torch.stack(r_pi) - torch.stack(r_ref))
+    return -F.logsigmoid(beta * logits_diff).mean()
+
+
+def run_preflight(policy, ref_model, loader, device, tok, out_dir, opt):
+    """F8: DPO preflight — 一个 batch 的完整训练路径 + 冻结校验 + 保存/重载。"""
+    print("[PREFLIGHT] running single-batch forward/backward/step...", flush=True)
+    ref_frozen_before = all(not p.requires_grad for p in ref_model.parameters())
+    b = next(iter(loader))
+    loss = dpo_loss_for_batch(policy, ref_model, b, device, beta=0.1)
+    (loss / 1).backward()
+    torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
+    opt.step()
+    opt.zero_grad()
+    ref_frozen_after = all(not p.requires_grad for p in ref_model.parameters())
+    pre_dir = Path(out_dir) / "_preflight_adapter"
+    policy.save_pretrained(str(pre_dir))
+    reloaded = PeftModel.from_pretrained(
+        policy.get_base_model(), str(pre_dir), is_trainable=False)
+    print(f"[PREFLIGHT] loss={float(loss):.4f} ref_frozen={ref_frozen_before}->{ref_frozen_after} "
+          f"adapter_saved_and_reloaded={pre_dir.exists()}", flush=True)
+    ok = ref_frozen_before and ref_frozen_after and pre_dir.exists()
+    print("[PREFLIGHT] PASS" if ok else "[PREFLIGHT] FAIL", flush=True)
+    return ok
+
+
+def evaluate_dpo(policy, ref_model, loader, device, beta):
     policy.eval()
-    ref_model.eval()
-    total_loss = 0.0
-    total_batches = 0
+    total, n = 0.0, 0
     with torch.no_grad():
         for b in loader:
-            chosen_ids = b["full_chosen"].to(device)
-            chosen_mask = torch.ones_like(chosen_ids)
-            chosen_prompt_lens = [len(p) for p in b["prompt_chosen"]]
-
-            ref_chosen_logits = ref_model(chosen_ids, attention_mask=chosen_mask).logits
-            policy_chosen_logits = policy(chosen_ids, attention_mask=chosen_mask).logits
-
-            rej_ids = b["full_rejected"].to(device)
-            rej_mask = torch.ones_like(rej_ids)
-            rej_prompt_lens = [len(p) for p in b["prompt_rejected"]]
-
-            ref_rej_logits = ref_model(rej_ids, attention_mask=rej_mask).logits
-            policy_rej_logits = policy(rej_ids, attention_mask=rej_mask).logits
-
-            chosen_log_pi = []
-            chosen_log_ref = []
-            for i in range(chosen_ids.size(0)):
-                pl = chosen_prompt_lens[i]
-                chosen_log_pi.append(sequence_log_prob(policy_chosen_logits[i:i+1],
-                                                        chosen_ids[i:i+1], pl, pad_id)[0])
-                chosen_log_ref.append(sequence_log_prob(ref_chosen_logits[i:i+1],
-                                                         chosen_ids[i:i+1], pl, pad_id)[0])
-
-            rej_log_pi = []
-            rej_log_ref = []
-            for i in range(rej_ids.size(0)):
-                pl = rej_prompt_lens[i]
-                rej_log_pi.append(sequence_log_prob(policy_rej_logits[i:i+1],
-                                                     rej_ids[i:i+1], pl, pad_id)[0])
-                rej_log_ref.append(sequence_log_prob(ref_rej_logits[i:i+1],
-                                                      rej_ids[i:i+1], pl, pad_id)[0])
-
-            chosen_log_pi = torch.stack(chosen_log_pi)
-            chosen_log_ref = torch.stack(chosen_log_ref)
-            rej_log_pi = torch.stack(rej_log_pi)
-            rej_log_ref = torch.stack(rej_log_ref)
-
-            logits_diff = (chosen_log_pi - chosen_log_ref) - (rej_log_pi - rej_log_ref)
-            loss = -F.logsigmoid(beta * logits_diff).mean()
-            total_loss += float(loss.item())
-            total_batches += 1
+            total += float(dpo_loss_for_batch(policy, ref_model, b, device, beta))
+            n += 1
     policy.train()
-    return total_loss / max(total_batches, 1)
+    return total / max(n, 1)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", required=True, help="DPO data jsonl")
-    ap.add_argument("--sft-adapter", required=True, help="Path to Stage 1 SFT adapter")
+    ap.add_argument("--data", required=True)
+    ap.add_argument("--sft-adapter", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--model", default=MODEL_ID)
     ap.add_argument("--hf-token", default=os.environ.get("HF_TOKEN", ""))
@@ -216,13 +270,12 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--grad-steps", type=int, default=16)
     ap.add_argument("--batch", type=int, default=1)
-    ap.add_argument("--beta", type=float, default=0.1, help="DPO temperature")
-    ap.add_argument("--val_ratio", type=float, default=0.1,
-                    help="验证集比例（0 表示不划分验证集）")
-    ap.add_argument("--early_stopping_patience", type=int, default=2,
-                    help="验证 loss 不下降多少个 epoch 后早停（0 表示不早停）")
-    ap.add_argument("--target_modules", type=str, default=None,
-                    help="LoRA target modules 正则，逗号分隔，如 'q_proj,v_proj'")
+    ap.add_argument("--beta", type=float, default=0.1)
+    ap.add_argument("--val_ratio", type=float, default=0.1)
+    ap.add_argument("--early_stopping_patience", type=int, default=2)
+    ap.add_argument("--target_modules", type=str, default=None)
+    ap.add_argument("--preflight", action="store_true",
+                    help="只跑单 batch preflight（双 31B 显存验证），不训练")
     ap.add_argument("--dequantize", action="store_true")
     args = ap.parse_args()
 
@@ -230,18 +283,13 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    data = [json.loads(l) for l in open(args.data, encoding="utf-8") if l.strip()]
+    raw = [json.loads(l) for l in open(args.data, encoding="utf-8") if l.strip()]
+    # F8: rejected 质量校验 — 空或与 chosen 相同的 pair 不进入
+    data = [r for r in raw
+            if r.get("rejected") and r["rejected"] != r.get("chosen", "")
+            and r.get("messages")]
+    print(f"Loaded {len(raw)} DPO records, {len(data)} valid pairs", flush=True)
     if not data:
-        print("NO TRAINING DATA -> BLOCKED.", flush=True)
-        sys.exit(2)
-
-    # P1: rejected 质量校验 — 过滤掉无效 pair
-    valid_data = []
-    for rec in data:
-        if rec.get("rejected") and rec["rejected"] != rec.get("chosen", ""):
-            valid_data.append(rec)
-    print(f"Loaded {len(data)} DPO pairs, {len(valid_data)} valid after rejection check", flush=True)
-    if not valid_data:
         print("NO VALID DPO PAIRS -> BLOCKED.", flush=True)
         sys.exit(2)
 
@@ -260,34 +308,31 @@ def main():
                 return None
         return AutoModelForCausalLM.from_pretrained(args.model, **kw)
 
-    # Policy model: base + SFT adapter (trainable)
-    base_model = _load_base(args.dequantize)
-    if base_model is None:
-        base_model = _load_base(False)
+    base_model = _load_base(args.dequantize) or _load_base(False)
     try:
         base_model.config.use_cache = False
     except Exception:
         pass
     base_model = prepare_model_for_kbit_training(base_model)
-    if args.target_modules:
-        target_mods = [m.strip() for m in args.target_modules.split(",") if m.strip()]
-    else:
-        target_mods = [".*language_model.*q_proj", ".*language_model.*v_proj"]
-    lora = LoraConfig(
-        r=args.r, lora_alpha=args.alpha, lora_dropout=args.dropout,
-        bias="none", task_type="CAUSAL_LM",
-        target_modules=target_mods,
-    )
+
+    target_mods = ([m.strip() for m in args.target_modules.split(",") if m.strip()]
+                   if args.target_modules
+                   else [".*language_model.*q_proj", ".*language_model.*v_proj"])
+
+    lora = LoraConfig(r=args.r, lora_alpha=args.alpha, lora_dropout=args.dropout,
+                      bias="none", task_type="CAUSAL_LM", target_modules=target_mods)
     policy = get_peft_model(base_model, lora)
     policy = PeftModel.from_pretrained(base_model, args.sft_adapter, is_trainable=True)
+    matched = sorted({n for n, _ in policy.named_parameters() if "lora_" in n.lower()})
+    print(f"[LORA AUDIT] matched lora tensors: {len(matched)}", flush=True)
+    if not matched:
+        print("LORA AUDIT FAIL: zero matched modules -> BLOCKED.", flush=True)
+        sys.exit(5)
     policy.gradient_checkpointing_enable()
     policy.enable_input_require_grads()
     policy.print_trainable_parameters()
 
-    # Reference model: base + SFT adapter (frozen)
-    ref_base = _load_base(args.dequantize)
-    if ref_base is None:
-        ref_base = _load_base(False)
+    ref_base = _load_base(args.dequantize) or _load_base(False)
     try:
         ref_base.config.use_cache = False
     except Exception:
@@ -296,174 +341,117 @@ def main():
     ref_model = PeftModel.from_pretrained(ref_base, args.sft_adapter, is_trainable=False)
     ref_model.eval()
 
-    ds = DPODataset(valid_data, tok, args.max_len)
-    print(f"DPODataset valid items: {len(ds)}", flush=True)
+    ds = DPODataset(data, tok, args.max_len)
+    print(f"DPODataset items={len(ds)} skipped={ds.skipped} "
+          f"prefix_mismatches={ds.prefix_mismatch_count}", flush=True)
+    if len(ds) == 0:
+        print("NO DATASET ITEMS -> BLOCKED.", flush=True)
+        sys.exit(2)
 
-    # P1: 划分训练/验证集
-    n_total = len(ds)
-    n_val = int(n_total * args.val_ratio) if args.val_ratio > 0 else 0
-    n_train = n_total - n_val
+    n_val = int(len(ds) * args.val_ratio) if args.val_ratio > 0 else 0
+    train_items = ds.items[n_val:]
+    val_items = ds.items[:n_val]
 
-    train_items = ds.items[n_val:] if n_val > 0 else ds.items
-    val_items = ds.items[:n_val] if n_val > 0 else []
+    def _subset(items):
+        sub = DPODataset.__new__(DPODataset)
+        sub.tok, sub.max_len = tok, args.max_len
+        sub.items = items
+        sub.prefix_mismatch_count = 0
+        sub.skipped = 0
+        return sub
 
-    ds_train = DPODataset.__new__(DPODataset)
-    ds_train.tok = tok
-    ds_train.max_len = args.max_len
-    ds_train.items = train_items
+    loader_train = DataLoader(_subset(train_items), batch_size=args.batch, shuffle=True,
+                              collate_fn=lambda b: collate_dpo(b, tok.pad_token_id),
+                              drop_last=False)
+    loader_val = (DataLoader(_subset(val_items), batch_size=args.batch, shuffle=False,
+                             collate_fn=lambda b: collate_dpo(b, tok.pad_token_id),
+                             drop_last=False) if val_items else None)
 
-    ds_val = None
-    if val_items:
-        ds_val = DPODataset.__new__(DPODataset)
-        ds_val.tok = tok
-        ds_val.max_len = args.max_len
-        ds_val.items = val_items
-
-    loader_train = DataLoader(
-        ds_train, batch_size=args.batch, shuffle=True,
-        collate_fn=lambda b: collate_dpo(b, tok.pad_token_id),
-        drop_last=False,  # P1: 不丢弃尾 batch
-    )
-    loader_val = None
-    if ds_val is not None:
-        loader_val = DataLoader(
-            ds_val, batch_size=args.batch, shuffle=False,
-            collate_fn=lambda b: collate_dpo(b, tok.pad_token_id),
-            drop_last=False,
-        )
-
+    device = policy.device
     opt = torch.optim.AdamW(policy.parameters(), lr=args.lr)
-    total_steps = max(1, len(loader_train) * args.epochs // args.grad_steps)
-    sched = get_linear_schedule_with_warmup(opt, num_warmup_steps=0,
-                                            num_training_steps=total_steps)
 
     os.makedirs(args.out, exist_ok=True)
-    best_val_loss = float("inf")
-    best_step = 0
-    patience_counter = 0
-    loss_hist = []
-    val_loss_hist = []
+
+    if args.preflight:
+        ok = run_preflight(policy, ref_model, loader_train, device, tok, args.out, opt)
+        sys.exit(0 if ok else 6)
+
+    total_steps = max(1, (len(loader_train) + args.grad_steps - 1)
+                      // args.grad_steps * args.epochs)
+    sched = get_linear_schedule_with_warmup(opt, num_warmup_steps=0,
+                                            num_training_steps=total_steps)
+    best_val, best_step, patience = float("inf"), 0, 0
+    loss_hist, val_hist = [], []
     policy.train()
     step = 0
-    device = policy.device
 
     for ep in range(args.epochs):
-        pending_grads = False
-
+        micro, pending = 0, False
         for bi, b in enumerate(loader_train):
-            chosen_ids = b["full_chosen"].to(device)
-            chosen_mask = torch.ones_like(chosen_ids)
-            chosen_prompt_lens = [len(p) for p in b["prompt_chosen"]]
-
-            with torch.no_grad():
-                ref_chosen_logits = ref_model(chosen_ids, attention_mask=chosen_mask).logits
-            policy_chosen_logits = policy(chosen_ids, attention_mask=chosen_mask).logits
-
-            rej_ids = b["full_rejected"].to(device)
-            rej_mask = torch.ones_like(rej_ids)
-            rej_prompt_lens = [len(p) for p in b["prompt_rejected"]]
-
-            with torch.no_grad():
-                ref_rej_logits = ref_model(rej_ids, attention_mask=rej_mask).logits
-            policy_rej_logits = policy(rej_ids, attention_mask=rej_mask).logits
-
-            chosen_log_pi = []
-            chosen_log_ref = []
-            for i in range(chosen_ids.size(0)):
-                pl = chosen_prompt_lens[i]
-                chosen_log_pi.append(sequence_log_prob(policy_chosen_logits[i:i+1],
-                                                        chosen_ids[i:i+1], pl, tok.pad_token_id)[0])
-                chosen_log_ref.append(sequence_log_prob(ref_chosen_logits[i:i+1],
-                                                         chosen_ids[i:i+1], pl, tok.pad_token_id)[0])
-
-            rej_log_pi = []
-            rej_log_ref = []
-            for i in range(rej_ids.size(0)):
-                pl = rej_prompt_lens[i]
-                rej_log_pi.append(sequence_log_prob(policy_rej_logits[i:i+1],
-                                                     rej_ids[i:i+1], pl, tok.pad_token_id)[0])
-                rej_log_ref.append(sequence_log_prob(ref_rej_logits[i:i+1],
-                                                      rej_ids[i:i+1], pl, tok.pad_token_id)[0])
-
-            chosen_log_pi = torch.stack(chosen_log_pi)
-            chosen_log_ref = torch.stack(chosen_log_ref)
-            rej_log_pi = torch.stack(rej_log_pi)
-            rej_log_ref = torch.stack(rej_log_ref)
-
-            logits_diff = (chosen_log_pi - chosen_log_ref) - (rej_log_pi - rej_log_ref)
-            loss = -F.logsigmoid(args.beta * logits_diff).mean()
-
-            loss = loss / args.grad_steps
-            loss.backward()
-            pending_grads = True
-
-            if (bi + 1) % args.grad_steps == 0:
+            loss = dpo_loss_for_batch(policy, ref_model, b, device, args.beta)
+            (loss / args.grad_steps).backward()
+            micro += 1
+            pending = True
+            if micro == args.grad_steps:
                 torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
                 opt.step()
                 sched.step()
                 opt.zero_grad()
                 step += 1
-                loss_hist.append(float(loss.item() * args.grad_steps))
+                loss_hist.append(float(loss.item()))
                 print(f"epoch={ep+1} step={step} dpo_loss={loss_hist[-1]:.4f}", flush=True)
-                pending_grads = False
+                micro, pending = 0, False
 
-        # P1: 处理 epoch 尾部的累积梯度
-        if pending_grads:
+        if pending and micro > 0:   # F8: 尾窗补偿
+            scale = args.grad_steps / micro
+            for p in policy.parameters():
+                if p.grad is not None:
+                    p.grad.mul_(scale)
             torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
             opt.step()
             sched.step()
             opt.zero_grad()
             step += 1
-            pending_grads = False
+            pending = False
+            print(f"epoch={ep+1} step={step} (tail window scaled x{scale:.2f})", flush=True)
 
-        # 验证
         if loader_val is not None:
-            val_loss = evaluate_dpo(policy, ref_model, loader_val, device, tok.pad_token_id, args.beta)
-            val_loss_hist.append(val_loss)
-            print(f"epoch={ep+1} val_dpo_loss={val_loss:.4f}", flush=True)
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_step = step
-                patience_counter = 0
-                best_dir = Path(args.out) / "best"
-                policy.save_pretrained(str(best_dir))
-                tok.save_pretrained(str(best_dir))
-                print(f"  New best val_loss={val_loss:.4f} saved to {best_dir}", flush=True)
+            val = evaluate_dpo(policy, ref_model, loader_val, device, args.beta)
+            val_hist.append(val)
+            print(f"epoch={ep+1} val_dpo_loss={val:.4f}", flush=True)
+            if val < best_val:
+                best_val, best_step, patience = val, step, 0
+                policy.save_pretrained(str(Path(args.out) / "best"))
+                tok.save_pretrained(str(Path(args.out) / "best"))
             else:
-                patience_counter += 1
-                if args.early_stopping_patience > 0 and patience_counter >= args.early_stopping_patience:
-                    print(f"Early stopping at epoch={ep+1} (patience {patience_counter})", flush=True)
+                patience += 1
+                if args.early_stopping_patience > 0 and patience >= args.early_stopping_patience:
+                    print(f"Early stopping at epoch={ep+1}", flush=True)
                     break
 
     policy.save_pretrained(args.out)
     tok.save_pretrained(args.out)
 
-    data_sha = sha256_file(Path(args.data))
     meta = {
         "base_model": args.model,
         "sft_adapter": args.sft_adapter,
         "data_file": args.data,
-        "data_sha256": data_sha,
+        "data_sha256": sha256_file(Path(args.data)),
         "seed": args.seed,
         "r": args.r, "alpha": args.alpha, "dropout": args.dropout,
         "lr": args.lr, "epochs": args.epochs, "max_len": args.max_len,
         "beta": args.beta,
-        "n_samples": len(valid_data),
-        "n_train": n_train,
-        "n_val": n_val,
+        "n_samples": len(data), "n_train": len(train_items), "n_val": len(val_items),
         "final_steps": step,
-        "loss_curve": loss_hist,
-        "val_loss_curve": val_loss_hist,
-        "best_val_loss": best_val_loss,
-        "best_step": best_step,
+        "loss_curve": loss_hist, "val_loss_curve": val_hist,
+        "best_val_loss": best_val, "best_step": best_step,
+        "prefix_mismatches": ds.prefix_mismatch_count,
         "target_modules": target_mods,
-        "stage": "dpo_verified_patch_p1",
+        "stage": "dpo_verified_patch_f8",
     }
     with open(os.path.join(args.out, "training_meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
 
-    import glob
     adapt = glob.glob(os.path.join(args.out, "adapter_model.safetensors"))
     if not adapt:
         print("WARNING: no adapter_model.safetensors produced -> GATE FAIL", flush=True)

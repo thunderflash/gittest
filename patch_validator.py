@@ -31,6 +31,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import paths_config as pc  # noqa: E402
+except ImportError:  # pragma: no cover
+    pc = None
+
 
 # ---------------------------------------------------------------------------
 # Diff 解析（统一 diff -> 编辑块）
@@ -121,15 +127,47 @@ def apply_edit_to_text(text: str, old_string: str, new_string: str) -> tuple[boo
     return True, text
 
 
+def git_apply_patch(work_dir: Path, gold_diff: str) -> tuple[bool, str]:
+    """F3: 使用 git apply 在临时副本上真实应用 patch（首选路径）。
+
+    返回 (成功, 消息)。git apply 在非 repo 目录也可用（按相对路径应用）。
+    """
+    # 统一 LF 行尾，否则 diff 解析可能失败
+    diff_text = gold_diff.replace("\r\n", "\n")
+    patch_file = work_dir / "_gold.patch"
+    try:
+        with open(patch_file, "w", encoding="utf-8", newline="\n") as f:
+            f.write(diff_text)
+    except Exception as e:
+        return False, f"write patch file failed: {e}"
+
+    common = dict(cwd=str(work_dir), capture_output=True, text=True, timeout=120)
+    try:
+        chk = subprocess.run(["git", "apply", "--check", "_gold.patch"], **common)
+        if chk.returncode != 0:
+            return False, f"git apply --check failed: {(chk.stderr or chk.stdout)[:500]}"
+        app = subprocess.run(["git", "apply", "_gold.patch"], **common)
+        if app.returncode != 0:
+            return False, f"git apply failed: {(app.stderr or app.stdout)[:500]}"
+        return True, "git_apply ok"
+    except FileNotFoundError:
+        return False, "git not available"
+    except Exception as e:
+        return False, f"git apply error: {e}"
+
+
 def apply_patch_to_repo(
     repo_dir: Path,
     edits: list[dict[str, str]],
-) -> tuple[bool, str, list[dict[str, Any]], Path | None]:
+    gold_diff: str = "",
+) -> tuple[bool, str, list[dict[str, Any]], Path | None, str]:
     """将 patch 应用到 repo 的临时工作副本。
 
-    将修改后的文件写入临时目录，便于后续对修改后代码做语法检查。
+    F3: 首选 git apply（真实 patch 语义：hunk 上下文/行号/新文件/删除），
+    不可用或失败时回退到字符串替换，并标记 apply_method 供审计。
+    注意：fallback 结果不能视为正式 patch 验证（多 hunk/重名等语义不受保证）。
 
-    返回 (全部成功, 消息, 逐文件详情, 临时工作目录或 None)。
+    返回 (全部成功, 消息, 逐文件详情, 临时工作目录或 None, apply_method)。
     """
     file_details: list[dict[str, Any]] = []
     work_dir = Path(tempfile.mkdtemp(prefix="patch_validate_"))
@@ -137,10 +175,30 @@ def apply_patch_to_repo(
     # 先复制整个 repo 到工作目录
     try:
         shutil.copytree(repo_dir, work_dir, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     except Exception as e:
-        return False, f"copy repo failed: {e}", file_details, None
+        return False, f"copy repo failed: {e}", file_details, None, "copy_failed"
 
+    # 首选：git apply 真实应用
+    if gold_diff.strip():
+        git_ok, git_msg = git_apply_patch(work_dir, gold_diff)
+        if git_ok:
+            for edit in edits:
+                filepath = edit["filepath"]
+                p = work_dir / filepath
+                detail = {
+                    "filepath": filepath,
+                    "exists": p.exists(),
+                    "applied": p.exists(),
+                    "error": None,
+                    "modified_path": str(p) if p.exists() else None,
+                    "modified_content": None,
+                }
+                file_details.append(detail)
+            return True, "applied via git apply", file_details, work_dir, "git_apply"
+        print(f"[VALIDATE] git apply failed ({git_msg[:120]}); falling back to string replace")
+
+    # 回退：字符串替换（仅作为降级路径，结果标记 fallback）
     for edit in edits:
         filepath = edit["filepath"]
         old_s = edit["old_string"]
@@ -154,9 +212,23 @@ def apply_patch_to_repo(
             "error": None,
             "modified_path": None,
             "modified_content": None,
+            "is_new_file": not old_s,
         }
 
         if not p.exists():
+            # 新文件：old_string 为空时直接创建
+            if not old_s:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    p.write_text(new_s, encoding="utf-8")
+                    detail["applied"] = True
+                    detail["exists"] = True
+                    detail["modified_path"] = str(p)
+                    detail["modified_content"] = new_s
+                except Exception as e:
+                    detail["error"] = f"create new file failed: {e}"
+                file_details.append(detail)
+                continue
             # 尝试模糊查找同名文件
             matches = list(work_dir.rglob(Path(filepath).name))
             matches = [m for m in matches if m.is_file()]
@@ -185,7 +257,6 @@ def apply_patch_to_repo(
             detail["applied"] = True
             detail["modified_path"] = str(p)
             detail["modified_content"] = result
-            # 写入修改后的内容到工作目录
             try:
                 p.write_text(result, encoding="utf-8")
             except Exception as e:
@@ -197,7 +268,8 @@ def apply_patch_to_repo(
         file_details.append(detail)
 
     all_ok = all(d["applied"] for d in file_details if d["exists"])
-    return all_ok, "applied" if all_ok else "partial_failure", file_details, work_dir
+    method = "string_replace_fallback"
+    return all_ok, "applied" if all_ok else "partial_failure", file_details, work_dir, method
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +330,10 @@ def validate_patch(
         return result
 
     # Gate 2 & 3 — File Existence + Apply (写入临时工作副本)
-    apply_ok, apply_msg, file_details, work_dir = apply_patch_to_repo(repo_dir, edits)
+    apply_ok, apply_msg, file_details, work_dir, apply_method = \
+        apply_patch_to_repo(repo_dir, edits, gold_diff=gold_diff)
     result["file_details"] = file_details
+    result["apply_method"] = apply_method
 
     files_exist = all(d["exists"] for d in file_details)
     files_applied = all(d["applied"] for d in file_details if d["exists"])
@@ -271,6 +345,7 @@ def validate_patch(
     result["gates"]["apply"] = {
         "passed": files_applied,
         "message": apply_msg,
+        "method": apply_method,
     }
 
     if not files_exist:
@@ -289,7 +364,7 @@ def validate_patch(
     syntax_passed = True
     if work_dir is not None:
         for detail in file_details:
-            if detail["exists"] and detail["applied"] and detail["modified_path"]:
+            if detail["exists"] and detail["applied"] and detail.get("modified_path"):
                 p = Path(detail["modified_path"])
                 ok, err = check_python_syntax(p)
                 syntax_results[detail["filepath"]] = {"passed": ok, "error": err}
@@ -305,20 +380,39 @@ def validate_patch(
         "results": syntax_results,
     }
 
-    # Gate 6 — Relevance
+    # Gate 6 — Relevance（F3: 分类记录，仅作为质量指标，不作为 correctness）
     modified_files = [d["filepath"] for d in file_details if detail_applied(d)]
-    relevant = any(f in src_files for f in modified_files)
+    src_set = set(src_files or [])
+    test_set = set(test_files or [])
+    categories: dict[str, list[str]] = {"source": [], "test": [], "other": []}
+    for f in modified_files:
+        norm = f.replace("\\", "/")
+        if norm in src_set:
+            categories["source"].append(f)
+        elif norm in test_set or "/tests/" in norm or norm.startswith("tests/") \
+                or Path(norm).name.startswith("test_") or Path(norm).name.endswith("_test.py"):
+            categories["test"].append(f)
+        else:
+            categories["other"].append(f)
+    relevant = any(f in src_set for f in modified_files)
     result["gates"]["relevance"] = {
         "passed": relevant,
+        "quality_metric_only": True,   # F3: 不参与 correctness 判定
+        "categories": categories,
         "modified_files": modified_files,
         "src_files": src_files,
+        "test_files": test_files,
     }
 
-    # 综合判定：关键 gate 包含 parse、file_existence、apply、non_empty、syntax、relevance
+    # 综合判定：critical = parse + file_existence + apply + non_empty + syntax_modified
+    # relevance 为质量指标（F3），git_apply 为首选方法（fallback 需人工复核）
     critical_passed = (
-        parse_ok and files_exist and files_applied and non_empty
-        and syntax_passed and relevant
+        parse_ok and files_exist and files_applied and non_empty and syntax_passed
     )
+    if apply_method == "string_replace_fallback":
+        # fallback 语义不受保证：不判 verified=True，交由人工/云端测试确认
+        critical_passed = False
+        result["fail_reasons"].append("apply_method_fallback_requires_review")
     result["verified"] = critical_passed
 
     # 置信度计算
@@ -351,9 +445,9 @@ def validate_patches_for_tasks(
     output_dir: Path,
 ) -> list[dict[str, Any]]:
     """为多个任务验证 patch。"""
-    recon_path = Path(r'F:\test\gemma4\mini_eval\reconstructed.json')
+    recon_path = pc.RECON_PATH if pc is not None else None
     recon = {}
-    if recon_path.exists():
+    if recon_path is not None and recon_path.exists():
         recon = json.loads(recon_path.read_text(encoding="utf-8"))
 
     results = []
@@ -367,7 +461,7 @@ def validate_patches_for_tasks(
         src_files = task.get("src_files", [])
         test_files = task.get("test_files", [])
 
-        repo_dir = Path(r'F:\test\gemma4\mini_eval\repos') / tid
+        repo_dir = (pc.REPOS_DIR / tid) if pc is not None else Path(tid)
         if not repo_dir.exists():
             print(f"[WARN] {tid}: repo directory not found, skipping validation")
             continue
@@ -414,7 +508,7 @@ def main():
     ap = __import__("argparse").ArgumentParser(description="Stage S4: Patch Validation")
     ap.add_argument("--tasks", nargs="+", required=True,
                     help="要验证的 task id 列表")
-    ap.add_argument("--output-dir", default=r"F:\test\gemma4\training\data\processed",
+    ap.add_argument("--output-dir", default=str(pc.PROCESSED_DIR) if pc is not None else "./data/processed",
                     help="处理后数据输出目录")
     args = ap.parse_args()
 

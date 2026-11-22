@@ -19,6 +19,9 @@ Exit 0 if all checks pass, exit 1 if any check fails.
 """
 
 import argparse
+import glob
+import hashlib
+import json
 import os
 import re
 import sys
@@ -38,6 +41,43 @@ PATCH_BLOCK_RE = re.compile(
     r"FILE:\s*\S+\s*\nOLD_STRING:\s*\n.*?\nNEW_STRING:\s*\n.*?\nEND",
     re.DOTALL,
 )
+
+
+def sha256_file(p) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for c in iter(lambda: f.read(1 << 20), b""):
+            h.update(c)
+    return h.hexdigest()
+
+
+def v0_adapter_files(adapter_dir: str) -> tuple[bool, str]:
+    """V0: 文件完整性 — safetensors 存在、非零、有 config；记录哈希。"""
+    weights = glob.glob(os.path.join(adapter_dir, "adapter_model.safetensors"))
+    if not weights or os.path.getsize(weights[0]) == 0:
+        return False, "adapter_model.safetensors missing or empty (.filepart?)"
+    cfg = os.path.join(adapter_dir, "adapter_config.json")
+    if not os.path.exists(cfg):
+        return False, "adapter_config.json missing"
+    sha = sha256_file(weights[0])
+    return True, f"weights {os.path.getsize(weights[0])}B sha256={sha[:16]}..."
+
+
+def v1_base_model_match(adapter_dir: str, model_id: str) -> tuple[bool, str]:
+    """V1: 训练元数据中的 base_model 必须与当前 --model 一致。"""
+    meta_path = os.path.join(adapter_dir, "training_meta.json")
+    if not os.path.exists(meta_path):
+        return True, "no training_meta.json (skip; recommend recording base_model)"
+    try:
+        meta = json.load(open(meta_path, encoding="utf-8"))
+    except Exception as e:
+        return False, f"training_meta.json unreadable: {e}"
+    trained_on = meta.get("base_model", "")
+    if trained_on and os.path.basename(trained_on) != os.path.basename(model_id) \
+            and trained_on != model_id:
+        return False, f"adapter trained on '{trained_on}' but verifying against '{model_id}'"
+    stage = meta.get("stage", "?")
+    return True, f"base_model match ({trained_on or 'unknown'}), stage={stage}"
 
 
 def check_lora_weights(model) -> tuple[bool, str]:
@@ -93,6 +133,14 @@ def main():
                     help="Min logits max-diff to consider adapter active")
     args = ap.parse_args()
 
+    # ---- V0: 文件完整性 ----
+    v0_ok, v0_msg = v0_adapter_files(args.adapter)
+    print(f"[V0] files: {v0_msg}", flush=True)
+
+    # ---- V1: base model 元数据匹配 ----
+    v1_ok, v1_msg = v1_base_model_match(args.adapter, args.model)
+    print(f"[V1] metadata: {v1_msg}", flush=True)
+
     tok = AutoTokenizer.from_pretrained(args.model, token=args.hf_token or None)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
@@ -110,7 +158,7 @@ def main():
     with torch.no_grad():
         base_logits = base_model(**inputs).logits
 
-    # 1. Logits diff check
+    # ---- V2a: logits diff ----
     adapter_model = PeftModel.from_pretrained(base_model, args.adapter, is_trainable=False)
     adapter_model.eval()
     with torch.no_grad():
@@ -118,28 +166,35 @@ def main():
 
     diff = (base_logits - adapter_logits).abs().max().item()
     logits_ok = diff > args.threshold
-    print(f"Base vs Adapter logits max diff: {diff:.6f} (threshold {args.threshold})", flush=True)
+    print(f"[V2] logits max diff: {diff:.6f} (threshold {args.threshold})", flush=True)
 
-    # 2. Target module / LoRA weights check
+    # ---- V2b: LoRA weights ----
     lora_ok, lora_detail = check_lora_weights(adapter_model)
-    print(f"LoRA weights: {lora_detail}", flush=True)
+    print(f"[V2] lora weights: {lora_detail}", flush=True)
 
-    # 3. Task quality check
+    # ---- V2c: task quality ----
     task_ok, task_detail = check_task_output(adapter_model, tok, args.threshold)
-    print(f"Task quality: {task_detail}", flush=True)
+    print(f"[V2] task quality: {task_detail}", flush=True)
 
-    all_ok = logits_ok and lora_ok and task_ok
+    all_ok = v0_ok and v1_ok and logits_ok and lora_ok and task_ok
     if all_ok:
-        print("VERIFY_PASSED: adapter active, LoRA weights loaded, task output valid.", flush=True)
+        print("VERIFY_PASSED: files intact, base model matches, adapter active, "
+              "LoRA weights loaded, task output valid.", flush=True)
         sys.exit(0)
     else:
         print("VERIFY_FAILED:", flush=True)
+        if not v0_ok:
+            print(f"  [V0] {v0_msg}", flush=True)
+        if not v1_ok:
+            print(f"  [V1] {v1_msg}", flush=True)
         if not logits_ok:
-            print("  - Logits diff below threshold (adapter may be inactive)", flush=True)
+            print("  [V2] logits diff below threshold (adapter may be inactive)", flush=True)
         if not lora_ok:
-            print(f"  - {lora_detail}", flush=True)
+            print(f"  [V2] {lora_detail}", flush=True)
         if not task_ok:
-            print(f"  - {task_detail}", flush=True)
+            print(f"  [V2] {task_detail}", flush=True)
+        print("NOTE: passing all V0-V2 checks is necessary but NOT sufficient — "
+              "frozen repair eval (V3) is required before release.", flush=True)
         sys.exit(1)
 
 

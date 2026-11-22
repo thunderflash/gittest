@@ -35,6 +35,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import paths_config as pc  # noqa: E402
+except ImportError:  # pragma: no cover
+    pc = None
+
 
 # ---------------------------------------------------------------------------
 # Gate 结果记录器
@@ -329,44 +335,70 @@ def gate_4_split_integrity(instance_id: str, all_instance_ids: list[str],
 
 
 # ---------------------------------------------------------------------------
-# Gate 5 — Training Eligibility
+# Gate 5 — Training Eligibility（F5: task-level，而非 issue-level）
 # ---------------------------------------------------------------------------
 
-def gate_5_training_eligibility(validation_result: dict, labels_result: dict | None,
-                                min_confidence: float = 0.7) -> GateResult:
-    """检查训练资格：验证通过 + 标签质量达标。"""
-    instance_id = validation_result.get("instance_id", "")
+# 各 task_type 进入正式训练所需的最低标签强度
+TASK_ELIGIBILITY_RULES = {
+    "patch_generation": {"min_strength": "strong", "requires_verified_patch": True},
+    "issue_understanding": {"min_strength": "strong", "requires_verified_patch": False},
+    "bug_localization": {"min_strength": "strong", "requires_verified_patch": False},
+    "test_reasoning": {"min_strength": "strong", "requires_verified_patch": False},
+    "root_cause_repair_plan": {"min_strength": "strong", "requires_verified_patch": False},
+    "test_result_interpretation": {"min_strength": "strong", "requires_verified_patch": True},
+}
+STRENGTH_ORDER = {"weak": 0, "unverified": 0, "medium": 1, "strong": 2}
 
+
+def gate_5_training_eligibility(validation_result: dict, labels_result: dict | None,
+                                min_confidence: float = 0.7) -> tuple[GateResult, dict[str, bool]]:
+    """F5: 检查训练资格 — 逐 task 判定，弱标签不再因 issue 级 strong 而连带放行。
+
+    返回 (GateResult, task_eligibility)。task_eligibility 为 {task_type: bool}，
+    仅当该 task 的标签强度达到规则要求且（需要时）patch 验证通过才为 True。
+    """
+    instance_id = validation_result.get("instance_id", "")
     verified = validation_result.get("verified", False)
     confidence = validation_result.get("confidence", 0.0)
+    fail_reasons = validation_result.get("fail_reasons", [])
 
-    if not verified:
-        return GateResult("gate_5_training_eligibility", instance_id, False,
-                          "patch validation not verified",
-                          evidence={"confidence": confidence, "verified": verified})
+    task_types: list[str] = (labels_result or {}).get("task_types", [])
+    label_strengths: dict = (labels_result or {}).get("label_strengths", {})
+    label_sources: dict = (labels_result or {}).get("label_sources", {})
 
-    if confidence < min_confidence:
-        return GateResult("gate_5_training_eligibility", instance_id, False,
-                          f"confidence {confidence} below threshold {min_confidence}",
-                          evidence={"confidence": confidence, "threshold": min_confidence})
+    task_eligibility: dict[str, bool] = {}
+    per_task_reasons: dict[str, str] = {}
 
-    # labels_result 是 provenance.json 格式：{"label_strengths": {...}, "task_types": [...]}
-    if labels_result is None:
-        return GateResult("gate_5_training_eligibility", instance_id, False,
-                          "no labels result",
-                          evidence={"reason": "missing"})
+    for tt in task_types:
+        rule = TASK_ELIGIBILITY_RULES.get(tt)
+        if rule is None:
+            task_eligibility[tt] = False
+            per_task_reasons[tt] = "no eligibility rule"
+            continue
+        strength = label_strengths.get(tt, "weak")
+        need = rule["min_strength"]
+        if STRENGTH_ORDER.get(strength, 0) < STRENGTH_ORDER[need]:
+            task_eligibility[tt] = False
+            per_task_reasons[tt] = f"strength {strength} < required {need}"
+            continue
+        if rule["requires_verified_patch"] and not verified:
+            task_eligibility[tt] = False
+            per_task_reasons[tt] = "requires verified patch; " + \
+                ("; ".join(fail_reasons) if fail_reasons else "validation failed")
+            continue
+        task_eligibility[tt] = True
+        per_task_reasons[tt] = "eligible"
 
-    label_strengths = labels_result.get("label_strengths", {})
-    has_strong = any(v == "strong" for v in label_strengths.values())
-    if not has_strong:
-        return GateResult("gate_5_training_eligibility", instance_id, False,
-                          "no strong label for training",
-                          evidence={"label_strengths": label_strengths,
-                                    "task_types": labels_result.get("task_types", [])})
-
-    return GateResult("gate_5_training_eligibility", instance_id, True, None,
-                      evidence={"confidence": confidence, "has_strong_label": has_strong,
-                                "label_strengths": label_strengths})
+    any_eligible = any(task_eligibility.values())
+    reason = None if any_eligible else "no task passes task-level eligibility"
+    return GateResult(
+        "gate_5_training_eligibility", instance_id, any_eligible, reason,
+        evidence={"confidence": confidence,
+                  "verified": verified,
+                  "task_eligibility": task_eligibility,
+                  "per_task_reasons": per_task_reasons,
+                  "label_strengths": label_strengths},
+    ), task_eligibility
 
 
 # ---------------------------------------------------------------------------
@@ -419,12 +451,13 @@ def run_gates_for_issue(
                                 train_ids, val_ids, holdout_ids, repo_map)
     gate_results.append(g4.to_dict())
 
-    # Gate 5 — per-task eligibility
+    # Gate 5 — per-task eligibility（F5）
     if validation_result and labels_result:
-        g5 = gate_5_training_eligibility(validation_result, labels_result)
+        g5, task_eligibility = gate_5_training_eligibility(validation_result, labels_result)
     else:
         g5 = GateResult("gate_5_training_eligibility", instance_id, False,
                         "missing validation or labels", evidence={"reason": "missing"})
+        task_eligibility = {}
     gate_results.append(g5.to_dict())
 
     # 保存每个 Gate 的结果
@@ -442,6 +475,7 @@ def run_gates_for_issue(
         "all_passed": all_passed,
         "gate_results": gate_results,
         "failed_gates": [g["gate_name"] for g in gate_results if not g["passed"]],
+        "task_eligibility": task_eligibility,   # F5: task-level 资格
     }
 
 
@@ -465,9 +499,9 @@ def run_gates_for_tasks(
           使用 task 数据中的 repo 字段（而非 instance_id 前缀推断）做 repo 级隔离。
     """
     import random  # noqa: F401
-    recon_path = Path(r'F:\test\gemma4\mini_eval\reconstructed.json')
+    recon_path = pc.RECON_PATH if pc is not None else None
     recon = {}
-    if recon_path.exists():
+    if recon_path is not None and recon_path.exists():
         recon = json.loads(recon_path.read_text(encoding="utf-8"))
 
     # Build repo_map from task data (instance_id -> repo), not from instance_id prefix
@@ -526,11 +560,26 @@ def run_gates_for_tasks(
     all_results = []
     eligible_samples = []
 
+    # F4: patch-hash / base_commit 去重检查（跨 instance 重复检测）
+    patch_hash_map: dict[str, list[str]] = {}
+    commit_map: dict[str, list[str]] = {}
+    for tid in task_ids:
+        task = recon.get(tid, {})
+        gd = (task.get("gold_diff", "") or "")
+        if gd.strip():
+            gd_hash = hashlib.sha256(gd.encode("utf-8")).hexdigest()
+            patch_hash_map.setdefault(gd_hash, []).append(tid)
+        bc = (task.get("base_commit", "") or "")
+        if bc:
+            commit_map.setdefault(bc, []).append(tid)
+    duplicate_patch_hashes = {h: ids for h, ids in patch_hash_map.items() if len(ids) > 1}
+    duplicate_base_commits = {c: ids for c, ids in commit_map.items() if len(ids) > 1}
+
     for tid in task_ids:
         task = recon.get(tid, {})
         if not task:
             continue
-        repo_dir = Path(r'F:\test\gemma4\mini_eval\repos') / tid
+        repo_dir = pc.REPOS_DIR / tid if pc is not None else Path(tid)
         base_commit = task.get("base_commit", "")
         val_res = validation_results.get(tid)
         lab_res = labels_results.get(tid)
@@ -549,13 +598,25 @@ def run_gates_for_tasks(
             repo_map=repo_map,
             output_dir=output_dir,
         )
+
+        # F4: 去重检查 — 与其他 instance 完全相同的 patch 需人工复核
+        gd_hash = hashlib.sha256((task.get("gold_diff", "") or "").encode("utf-8")).hexdigest() \
+            if (task.get("gold_diff", "") or "").strip() else None
+        if gd_hash and gd_hash in duplicate_patch_hashes:
+            res["dedup_flag"] = "duplicate_patch_hash"
+            res["duplicate_with"] = [i for i in duplicate_patch_hashes[gd_hash] if i != tid]
+        elif base_commit and base_commit in duplicate_base_commits:
+            # 同 base_commit 多 issue 是正常的（同 repo 多 issue），仅记录
+            res["dedup_flag"] = "shared_base_commit"
+
         all_results.append(res)
 
-        if res["all_passed"]:
+        if res["all_passed"] and res.get("dedup_flag") != "duplicate_patch_hash":
             eligible_samples.append({
                 "instance_id": tid,
                 "split": ("train" if tid in train_ids else
                           "val" if tid in val_ids else "holdout"),
+                "task_eligibility": res.get("task_eligibility", {}),   # F5
                 "gate_results": res["gate_results"],
             })
 
@@ -575,7 +636,17 @@ def run_gates_for_tasks(
         "failed_any_gate": failed,
         "pass_rate": round(passed / max(total, 1), 4),
         "eligible_for_training": len(eligible_samples),
+        "eligible_task_types": sorted({
+            tt for s in eligible_samples
+            for tt, ok in s.get("task_eligibility", {}).items() if ok
+        }),
         "gate_fail_counts": gate_fail_counts,
+        "dedup": {
+            "duplicate_patch_hashes": {
+                h[:12]: ids for h, ids in duplicate_patch_hashes.items()
+            },
+            "shared_base_commit_count": len(duplicate_base_commits),
+        },
         "split_distribution": {
             "train": len(train_ids),
             "val": len(val_ids),
@@ -616,7 +687,7 @@ def main():
     ap = __import__("argparse").ArgumentParser(description="Stage S5: Quality Gates + Audit")
     ap.add_argument("--tasks", nargs="+", required=True,
                     help="要运行 Gate 的 task id 列表")
-    ap.add_argument("--output-dir", default=r"F:\test\gemma4\training\data\processed",
+    ap.add_argument("--output-dir", default=str(pc.PROCESSED_DIR) if pc is not None else "./data/processed",
                     help="处理后数据输出目录")
     ap.add_argument("--seed", type=int, default=42,
                     help="分割随机种子（可复现）")
